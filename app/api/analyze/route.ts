@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { analyze } from "@/engine";
+import { runAnalysis } from "@/lib/analysis/run-analysis";
 import { fetchPubMedSummary } from "@/lib/pubmed";
 
 export const maxDuration = 60;
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const includePubmed = body?.includePubmed !== false;
     
     try {
-      const result = await analyze(
+      const result = await runAnalysis(
         { query, includePubmed },
         { fetchPubmed: includePubmed ? fetchPubMedSummary : undefined }
       );

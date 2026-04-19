@@ -10,6 +10,10 @@ Domain-specific evidence calibration for longevity and biohacking-related AI out
 - **LLM** – OpenAI by default; swappable via `engine/llm/provider.ts`
 - **Evidence map** – `data/evidence_map.json` (editable)
 
+## Roadmap / EIE v2
+
+Incremental upgrade plan—including **Phase 1 migration map** (file→service, data→tables), **products/sources**, structured **evidence_entries**, **escalation-aware model routing**, thin API routes, and **Animoca Analyst** boundaries—lives in **[docs/EIE-v2-upgrade-plan.md](docs/EIE-v2-upgrade-plan.md)**.
+
 ## Local development
 
 ### 1. Install dependencies
@@ -133,6 +137,8 @@ lib/
 components/
   dashboard/
   demo/
+docs/
+  EIE-v2-upgrade-plan.md   # Phased v2 plan and current-state map
 ```
 
 ## Deploy
