@@ -38,7 +38,11 @@ npm run dev
 
 ### 4. API
 
-**POST** `/api/analyze`
+All routes are **POST** and expect JSON unless noted.
+
+#### `/api/analyze`
+
+Main pipeline: raw answer, claims, evidence flags, guarded rewrite, coherence score, optional PubMed summary.
 
 ```json
 // Request
@@ -57,14 +61,61 @@ npm run dev
 
 Set `includePubmed: true` to fetch PubMed counts (RCT, meta-analysis, volume). Optional `PUBMED_EMAIL` in `.env.local` for NCBI rate limits.
 
+#### `/api/claim-studies`
+
+Given a single claim plus the original user query, searches PubMed and Semantic Scholar for related RCTs and meta-analyses and returns deduplicated study links (used from the dashboard).
+
+```json
+// Request
+{ "claimText": "...", "originalQuery": "..." }
+
+// Response
+{
+  "rct_count": 0,
+  "meta_analysis_count": 0,
+  "studies": [
+    {
+      "title": "...",
+      "authors": ["..."],
+      "year": 2020,
+      "journal": "...",
+      "url": "...",
+      "source": "pubmed",
+      "pmid": "..."
+    }
+  ]
+}
+```
+
+Optional: `SEMANTIC_SCHOLAR_API_KEY` in `.env.local` for Semantic Scholar (higher rate limits). `PUBMED_EMAIL` helps PubMed E-utilities etiquette.
+
+#### `/api/menu-description` and `/api/product-description`
+
+Downstream copy helpers: they take the **already guarded** text from an analyze run and ask the LLM for three alternative write-ups (spa-style menu blurbs vs retail-safe product copy). They do not re-run the evidence engine; they only paraphrase what is in `guardedOutput`.
+
+```json
+// Request (same shape for both routes)
+{
+  "guardedOutput": "... text from guarded_response ...",
+  "originalQuery": "... same user query as /api/analyze ..."
+}
+
+// Response
+{ "descriptions": ["...", "...", "..."] }
+```
+
 ## Project structure
 
 ```
-app/                 # Next.js App Router
-  api/analyze/       # POST /api/analyze
-  dashboard/         # Full transparency view
-  page.tsx           # Demo longevity AI (guarded only)
-engine/              # Core evidence intelligence
+app/                       # Next.js App Router
+  api/
+    analyze/               # POST /api/analyze
+    claim-studies/         # POST /api/claim-studies
+    menu-description/      # POST /api/menu-description
+    product-description/   # POST /api/product-description
+  dashboard/               # Full transparency + study search + copy helpers
+  page.tsx                 # Demo longevity AI (guarded only)
+engine/                    # Core evidence intelligence
   claim-extractor.ts
   certainty-alignment.ts
   coherence-score.ts
@@ -72,11 +123,13 @@ engine/              # Core evidence intelligence
   rewrite-engine.ts
   llm/provider.ts
   types.ts
-  index.ts           # Orchestrator
+  index.ts                 # Orchestrator
 data/
-  evidence_map.json  # Curated interventions (edit here)
+  evidence_map.json        # Curated interventions (edit here)
 lib/
-  pubmed.ts          # Optional PubMed E-utilities
+  pubmed.ts                # Optional PubMed E-utilities (analyze summary)
+  study-search.ts          # PubMed + Semantic Scholar (claim-studies)
+  use-analysis-state.ts    # Demo URL/query state
 components/
   dashboard/
   demo/
