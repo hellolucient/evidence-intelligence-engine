@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "smoke:phase4": "node scripts/phase4-smoke.mjs",
+    "seed:evidence": "node scripts/seed-evidence-entries.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",

@@ -22,6 +22,28 @@ export interface StudySearchResult {
 
 const SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search";
 
+type SemanticScholarAuthor = {
+  name?: string;
+};
+
+type SemanticScholarExternalIds = {
+  PubMed?: string[];
+};
+
+type SemanticScholarPaper = {
+  title?: string;
+  authors?: SemanticScholarAuthor[];
+  year?: number;
+  venue?: string;
+  url?: string;
+  paperId?: string;
+  externalIds?: SemanticScholarExternalIds;
+};
+
+type SemanticScholarSearchResponse = {
+  data?: SemanticScholarPaper[];
+};
+
 /**
  * Search Semantic Scholar for papers
  */
@@ -50,25 +72,54 @@ async function searchSemanticScholar(
 
     if (!res.ok) return [];
 
-    const data = await res.json();
+    const data = (await res.json()) as SemanticScholarSearchResponse;
     const papers = data.data || [];
 
     return papers
-      .filter((paper: any) => paper.title && paper.url)
-      .map((paper: any) => ({
-        title: paper.title,
-        authors: (paper.authors || []).slice(0, 3).map((a: any) => a.name || ''),
+      .filter((paper) => typeof paper.title === "string" && typeof paper.url === "string")
+      .map((paper) => ({
+        title: paper.title ?? "",
+        authors: (paper.authors || [])
+          .slice(0, 3)
+          .map((a) => a.name || "")
+          .filter((n) => n.length > 0),
         year: paper.year,
         journal: paper.venue,
         url: paper.url || `https://www.semanticscholar.org/paper/${paper.paperId}`,
         source: 'semantic_scholar' as const,
         paperId: paper.paperId,
-        pmid: paper.externalIds?.PubMed?.join(',') || undefined,
+        pmid: paper.externalIds?.PubMed?.join(",") || undefined,
       }));
   } catch {
     return [];
   }
 }
+
+type PubMedESearchResponse = {
+  esearchresult?: {
+    idlist?: string[];
+  };
+};
+
+type PubMedAuthor = {
+  name?: string;
+};
+
+type PubMedESummaryPaper = {
+  uid?: string;
+  title?: string;
+  authors?: PubMedAuthor[];
+  pubdate?: string;
+  source?: string;
+};
+
+type PubMedESummaryResult = Record<string, PubMedESummaryPaper | unknown> & {
+  uids?: string[];
+};
+
+type PubMedESummaryResponse = {
+  result?: PubMedESummaryResult;
+};
 
 /**
  * Search PubMed and get study details (with links)
@@ -95,8 +146,8 @@ async function searchPubMedWithDetails(
 
     if (!searchRes.ok) return [];
 
-    const searchData = await searchRes.json();
-    const ids = searchData?.esearchresult?.idlist || [];
+    const searchData = (await searchRes.json()) as PubMedESearchResponse;
+    const ids = searchData.esearchresult?.idlist || [];
     
     if (ids.length === 0) return [];
 
@@ -115,20 +166,33 @@ async function searchPubMedWithDetails(
 
     if (!fetchRes.ok) return [];
 
-    const fetchData = await fetchRes.json();
-    const results = fetchData?.result || {};
-    
-    return Object.values(results)
-      .filter((paper: any) => paper.title && paper.uid)
-      .map((paper: any) => ({
-        title: paper.title || '',
-        authors: (paper.authors || []).slice(0, 3).map((a: any) => a.name || ''),
-        year: paper.pubdate ? parseInt(paper.pubdate.split(' ')[0]) : undefined,
+    const fetchData = (await fetchRes.json()) as PubMedESummaryResponse;
+    const results = fetchData.result;
+    if (!results) return [];
+
+    const uids = Array.isArray(results.uids) ? results.uids : [];
+
+    const out: Study[] = [];
+    for (const uid of uids) {
+      const paper = results[uid] as PubMedESummaryPaper | undefined;
+      if (!paper || typeof paper.title !== "string" || typeof paper.uid !== "string") {
+        continue;
+      }
+      out.push({
+        title: paper.title || "",
+        authors: (paper.authors || [])
+          .slice(0, 3)
+          .map((a) => a.name || "")
+          .filter((n) => n.length > 0),
+        year: paper.pubdate ? parseInt(paper.pubdate.split(" ")[0] ?? "", 10) || undefined : undefined,
         journal: paper.source,
         url: `https://pubmed.ncbi.nlm.nih.gov/${paper.uid}/`,
-        source: 'pubmed' as const,
+        source: "pubmed" as const,
         pmid: paper.uid,
-      }));
+      });
+    }
+
+    return out;
   } catch {
     return [];
   }

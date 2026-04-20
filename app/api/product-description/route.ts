@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { defaultProvider } from "@/engine/llm/provider";
+import { createModelRouter } from "@/engine/llm/model-router";
+import { PROMPT_VERSION } from "@/engine/prompts/registry";
 
 const PRODUCT_DESCRIPTION_SYSTEM = `You are a compliant copywriter for wellness and supplement products. Your task is to generate 3 different SAFE product descriptions based on the GUARDED OUTPUT provided.
 
@@ -34,6 +35,7 @@ Output ONLY the 3 product descriptions in this format. No preamble, no explanati
 
 export async function POST(request: Request) {
   try {
+    const router = createModelRouter();
     let body;
     try {
       body = await request.json();
@@ -63,10 +65,12 @@ export async function POST(request: Request) {
 
     try {
       const userMessage = `Original Query: ${originalQuery}\n\nGuarded Output (evidence-calibrated content):\n${guardedOutput}`;
-      const productDescriptions = await defaultProvider.complete(
-        PRODUCT_DESCRIPTION_SYSTEM,
-        userMessage
-      );
+      const productDescriptions = await router.complete({
+        taskType: "downstream_product_description",
+        promptVersion: PROMPT_VERSION.downstream_product_description,
+        systemPrompt: PRODUCT_DESCRIPTION_SYSTEM,
+        userMessage,
+      });
 
       const descriptions: string[] = [];
       const sections = productDescriptions.split(/\n\s*(?=\d+\.\s*\*\*)/);

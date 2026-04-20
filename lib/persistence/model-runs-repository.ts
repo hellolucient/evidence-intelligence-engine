@@ -24,8 +24,27 @@ export type ModelRunInsert = {
  * Insert one or more model run records. No-op until the model router logs calls here (Phase 5).
  */
 export async function insertModelRuns(
-  _client: SupabaseClient,
-  _rows: ModelRunInsert[]
+  client: SupabaseClient,
+  rows: ModelRunInsert[]
 ): Promise<void> {
-  // Intentionally empty — wire from model-router / LLM wrapper in a later phase.
+  if (rows.length === 0) return;
+
+  const { error } = await client.from("model_runs").insert(
+    rows.map((r) => ({
+      analysis_id: r.analysis_id,
+      prompt_version: r.prompt_version,
+      task_type: r.task_type,
+      provider: r.provider,
+      model: r.model,
+      latency_ms: r.latency_ms,
+      estimated_tokens_in: r.estimated_tokens_in ?? null,
+      estimated_tokens_out: r.estimated_tokens_out ?? null,
+      estimated_cost_usd: r.estimated_cost_usd ?? null,
+      status: r.status,
+      error_message: r.error_message ?? null,
+      metadata: r.metadata ?? {},
+    }))
+  );
+
+  if (error) throw error;
 }

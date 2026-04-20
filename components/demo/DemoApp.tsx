@@ -78,7 +78,7 @@ export function DemoApp() {
           Longevity AI
         </h1>
         <p style={{ color: "rgba(255,255,255,0.85)", fontSize: "1.125rem", margin: 0 }}>
-          Ask a longevity or biohacking question. You'll get an evidence-calibrated answer only.
+          Ask a longevity or biohacking question. You&apos;ll get an evidence-calibrated answer only.
         </p>
       </div>
 

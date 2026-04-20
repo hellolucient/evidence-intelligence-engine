@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useAnalysisState } from "@/lib/use-analysis-state";
-import type { AnalyzeResponse, EvidenceFlag, ExtractedClaim, Study } from "@/engine/types";
+import type { EvidenceFlag, ExtractedClaim, Study } from "@/engine/types";
 
 // Flag colors for visual matching
 const FLAG_COLORS = [

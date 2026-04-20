@@ -55,6 +55,27 @@ export interface EvidenceFlag {
 export interface AnalyzeInput {
   query: string;
   includePubmed?: boolean;
+  /**
+   * Optional context for persistence only (Phase 6+).
+   * Not required by any route and does not affect engine behavior.
+   */
+  product?: {
+    name: string;
+    brand?: string;
+    variant_or_sku?: string;
+    category?: string;
+    region_or_market?: string;
+    metadata?: Record<string, unknown>;
+  };
+  source?: {
+    source_type: "label" | "url" | "pdf" | "brochure" | "manual_input" | "upload";
+    title?: string;
+    raw_text?: string;
+    extracted_text?: string;
+    source_url?: string;
+    content_hash?: string;
+    metadata?: Record<string, unknown>;
+  };
 }
 
 export interface PubMedSummary {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { defaultProvider } from "@/engine/llm/provider";
+import { createModelRouter } from "@/engine/llm/model-router";
+import { PROMPT_VERSION } from "@/engine/prompts/registry";
 
 const MENU_DESCRIPTION_SYSTEM = `You are a spa treatment menu writer. Your task is to generate 3 different menu descriptions for a spa offering based on the GUARDED OUTPUT provided.
 
@@ -45,6 +46,7 @@ Output ONLY the 3 menu descriptions in this format. No preamble, no explanation.
 
 export async function POST(request: Request) {
   try {
+    const router = createModelRouter();
     let body;
     try {
       body = await request.json();
@@ -74,10 +76,12 @@ export async function POST(request: Request) {
 
     try {
       const userMessage = `Original Query: ${originalQuery}\n\nGuarded Output (evidence-calibrated content):\n${guardedOutput}`;
-      const menuDescriptions = await defaultProvider.complete(
-        MENU_DESCRIPTION_SYSTEM,
-        userMessage
-      );
+      const menuDescriptions = await router.complete({
+        taskType: "downstream_menu_description",
+        promptVersion: PROMPT_VERSION.downstream_menu_description,
+        systemPrompt: MENU_DESCRIPTION_SYSTEM,
+        userMessage,
+      });
       
       // Parse the response into an array of descriptions
       // Expected format: "1. **Title**\nDescription paragraph.\n\n2. **Title**\nDescription..."
@@ -90,7 +94,7 @@ export async function POST(request: Request) {
         if (!section.trim()) continue;
         
         // Remove the number prefix (e.g., "1. ")
-        let cleaned = section.replace(/^\d+\.\s*/, '').trim();
+        const cleaned = section.replace(/^\d+\.\s*/, "").trim();
         
         // If the section has content, add it
         if (cleaned.length > 10) {
