@@ -2,7 +2,7 @@
  * Supabase **server-only** admin client (service role).
  * Do not import from Client Components — bypasses RLS; keys must never ship to the browser.
  *
- * Phase 2: provided for upcoming persistence; engine and API routes do not use this yet.
+ * Used for optional persistence (analyses, model_runs, etc.) when EIE_PERSIST_ANALYSIS and env are set.
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";

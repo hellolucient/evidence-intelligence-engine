@@ -15,7 +15,7 @@ export async function logModelRunNonFatal(row: ModelRunInsert): Promise<void> {
 
   if (!hasSupabasePersistenceConfig()) {
     console.warn(
-      "[EIE] EIE_PERSIST_ANALYSIS is enabled but Supabase env is missing (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY); skipping model_runs logging."
+      "[EIE] model_runs: skipped — Supabase URL or service role key missing while EIE_PERSIST_ANALYSIS is on"
     );
     return;
   }
@@ -29,7 +29,7 @@ export async function logModelRunNonFatal(row: ModelRunInsert): Promise<void> {
       },
     ]);
   } catch (err) {
-    console.error("[EIE] model_runs insert failed:", err);
+    console.error("[EIE] model_runs: insert failed (non-fatal):", err);
   }
 }
 

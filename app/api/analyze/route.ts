@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runAnalysis } from "@/lib/analysis/run-analysis";
+import { runAnalysisWithMeta } from "@/lib/analysis/run-analysis";
 import { fetchPubMedSummary } from "@/lib/pubmed";
 
 export const maxDuration = 60;
@@ -28,11 +28,15 @@ export async function POST(request: Request) {
     const includePubmed = body?.includePubmed !== false;
     
     try {
-      const result = await runAnalysis(
+      const { result, meta } = await runAnalysisWithMeta(
         { query, includePubmed },
         { fetchPubmed: includePubmed ? fetchPubMedSummary : undefined }
       );
-      return NextResponse.json(result);
+      const headers = new Headers();
+      if (meta.persisted_analysis_id) {
+        headers.set("x-eie-analysis-id", meta.persisted_analysis_id);
+      }
+      return NextResponse.json(result, { headers });
     } catch (analyzeErr) {
       const errorMessage = analyzeErr instanceof Error ? analyzeErr.message : String(analyzeErr);
       console.error("Analysis error:", errorMessage);

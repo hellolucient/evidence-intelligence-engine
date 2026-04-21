@@ -14,6 +14,12 @@ const FLAG_COLORS = [
   { bg: "#ecfdf5", border: "#86efac", text: "#065f46", dotColor: "#10b981" }, // Green - vibrant green
 ];
 
+function truncateMiddle(value: string, head: number, tail: number): string {
+  const s = value ?? "";
+  if (s.length <= head + tail + 3) return s;
+  return `${s.slice(0, head)}…${s.slice(-tail)}`;
+}
+
 /**
  * Insert flag markers into raw output text where flagged claims appear
  */
@@ -271,6 +277,20 @@ export function DashboardView() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
+  // Operator: Animoca email workflow (persisted analysis only)
+  const [analysisIdInput, setAnalysisIdInput] = useState("");
+  const [animocaBrief, setAnimocaBrief] = useState<{ subject: string; body_text: string; to: string } | null>(null);
+  const [animocaLoading, setAnimocaLoading] = useState(false);
+  const [animocaSendLoading, setAnimocaSendLoading] = useState(false);
+  const [animocaStatus, setAnimocaStatus] = useState<string | null>(null);
+  const [currentPersistedAnalysis, setCurrentPersistedAnalysis] = useState<{
+    analysis_id: string;
+    query_text: string;
+    coherence_score: number | null;
+    created_at: string | null;
+  } | null>(null);
+  const [analysisIdWasManuallyEdited, setAnalysisIdWasManuallyEdited] = useState(false);
+
   // Process raw output with flag markers
   const rawOutputWithFlags = useMemo(() => {
     if (!result?.raw_response || !result?.claims || !result?.evidence_flags) {
@@ -292,6 +312,7 @@ export function DashboardView() {
         body: JSON.stringify({ query: query.trim(), includePubmed: true }),
       });
       
+      const persistedId = res.headers.get("x-eie-analysis-id");
       const contentType = res.headers.get("content-type");
       if (!contentType?.includes("application/json")) {
         const text = await res.text();
@@ -303,6 +324,22 @@ export function DashboardView() {
         throw new Error(data?.error ?? `Request failed with status ${res.status}`);
       }
       setResult(data);
+
+      if (persistedId) {
+        const next = {
+          analysis_id: persistedId,
+          query_text: query.trim(),
+          coherence_score: typeof data?.coherence_score === "number" ? data.coherence_score : null,
+          created_at: null,
+        };
+        setCurrentPersistedAnalysis(next);
+        // Auto-fill operator panel unless the operator explicitly overrode the field.
+        setAnalysisIdInput((prev) => {
+          if (analysisIdWasManuallyEdited && prev.trim()) return prev;
+          return persistedId;
+        });
+        setAnimocaStatus(`Persisted analysis captured: ${persistedId}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -369,6 +406,106 @@ export function DashboardView() {
       setDescriptionModalType(null);
     } finally {
       setProductLoading(false);
+    }
+  }
+
+  async function generateAnimocaBrief() {
+    const analysis_id = (analysisIdInput.trim() || currentPersistedAnalysis?.analysis_id || "").trim();
+    if (!analysis_id) return;
+    setAnimocaLoading(true);
+    setAnimocaStatus(null);
+    setAnimocaBrief(null);
+    try {
+      const res = await fetch("/api/animoca/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysis_id }),
+      });
+      const contentType = res.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      if (data?.status === "missing_persistence_config") {
+        setAnimocaStatus("Persistence config missing on server; cannot load persisted analyses.");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Request failed with status ${res.status}`);
+      }
+      if (data?.status !== "ok" || typeof data?.subject !== "string" || typeof data?.body_text !== "string") {
+        throw new Error("Unexpected brief response.");
+      }
+      setAnimocaBrief({ subject: data.subject, body_text: data.body_text, to: data.to ?? "" });
+      if (typeof data?.analysis_id === "string") {
+        setCurrentPersistedAnalysis({
+          analysis_id: data.analysis_id,
+          query_text: typeof data?.query_text === "string" ? data.query_text : (currentPersistedAnalysis?.query_text ?? ""),
+          coherence_score: typeof data?.coherence_score === "number" ? data.coherence_score : (currentPersistedAnalysis?.coherence_score ?? null),
+          created_at: typeof data?.created_at === "string" ? data.created_at : (currentPersistedAnalysis?.created_at ?? null),
+        });
+      }
+      setAnimocaStatus("Brief generated.");
+    } catch (err) {
+      setAnimocaStatus(err instanceof Error ? err.message : "Failed to generate brief");
+    } finally {
+      setAnimocaLoading(false);
+    }
+  }
+
+  async function copyAnimocaBrief() {
+    if (!animocaBrief) return;
+    const text = `Subject: ${animocaBrief.subject}\nTo: ${animocaBrief.to}\n\n${animocaBrief.body_text}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setAnimocaStatus("Copied to clipboard.");
+    } catch {
+      setAnimocaStatus("Copy failed (clipboard permission).");
+    }
+  }
+
+  async function sendAnimocaEmail() {
+    const analysis_id = (analysisIdInput.trim() || currentPersistedAnalysis?.analysis_id || "").trim();
+    if (!analysis_id) return;
+    setAnimocaSendLoading(true);
+    setAnimocaStatus(null);
+    try {
+      const res = await fetch("/api/animoca/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysis_id }),
+      });
+      const contentType = res.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      if (data?.status === "missing_persistence_config") {
+        setAnimocaStatus("Persistence config missing on server; cannot send.");
+        return;
+      }
+      if (data?.status === "missing_email_config") {
+        setAnimocaStatus(`Email config missing on server: ${data?.reason ?? "unknown"}`);
+        return;
+      }
+      if (data?.status === "failure") {
+        setAnimocaStatus(`Send failed: ${data?.reason ?? "unknown"}`);
+        return;
+      }
+      if (data?.status === "success") {
+        setAnimocaStatus("Sent to Mind.");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Request failed with status ${res.status}`);
+      }
+      setAnimocaStatus("Unexpected send response.");
+    } catch (err) {
+      setAnimocaStatus(err instanceof Error ? err.message : "Failed to send email");
+    } finally {
+      setAnimocaSendLoading(false);
     }
   }
 
@@ -598,6 +735,160 @@ export function DashboardView() {
             </label>
           </div>
         </form>
+
+        {/* Operator: Animoca email workflow (persisted analysis) */}
+        <div style={{ marginTop: "1.25rem" }}>
+          <div
+            style={{
+              padding: "1.25rem",
+              borderRadius: "16px",
+              border: "1px solid #e5e7eb",
+              background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#111827" }}>
+                Operator Tools — Animoca Mind
+              </h3>
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#6b7280" }}>
+                Requires a persisted <code>analysis_id</code>. Generate/Copy works without email config.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.75rem" }}>
+              <input
+                value={analysisIdInput}
+                onChange={(e) => {
+                  setAnalysisIdWasManuallyEdited(true);
+                  setAnalysisIdInput(e.target.value);
+                }}
+                placeholder="analysis_id (uuid)…"
+                style={{
+                  flex: "1 1 340px",
+                  minWidth: "260px",
+                  padding: "0.75rem 0.9rem",
+                  borderRadius: "12px",
+                  border: "2px solid #e5e7eb",
+                  fontSize: "0.95rem",
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace",
+                }}
+              />
+
+              {currentPersistedAnalysis?.analysis_id && (
+                <div style={{ flexBasis: "100%", marginTop: "0.25rem", color: "#374151", fontSize: "0.9rem" }}>
+                  <strong>Selected analysis:</strong>{" "}
+                  <code>{truncateMiddle(currentPersistedAnalysis.analysis_id, 10, 10)}</code>
+                  {" · "}
+                  <span>{currentPersistedAnalysis.query_text || "(query unknown)"}</span>
+                  {" · "}
+                  <span>
+                    score:{" "}
+                    {typeof currentPersistedAnalysis.coherence_score === "number"
+                      ? currentPersistedAnalysis.coherence_score
+                      : "?"}
+                  </span>
+                  {" · "}
+                  <span>
+                    created:{" "}
+                    {currentPersistedAnalysis.created_at
+                      ? new Date(currentPersistedAnalysis.created_at).toLocaleString()
+                      : "?"}
+                  </span>
+                </div>
+              )}
+
+              {!currentPersistedAnalysis?.analysis_id && !analysisIdInput.trim() && (
+                <div style={{ flexBasis: "100%", marginTop: "0.25rem", color: "#6b7280", fontSize: "0.9rem" }}>
+                  Run and persist an analysis first, or enter an <code>analysis_id</code> manually.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={generateAnimocaBrief}
+                disabled={animocaLoading || !(analysisIdInput.trim() || currentPersistedAnalysis?.analysis_id)}
+                style={{
+                  padding: "0.75rem 1rem",
+                  background: animocaLoading ? "#9ca3af" : "linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "12px",
+                  fontWeight: 700,
+                  cursor: animocaLoading ? "not-allowed" : "pointer",
+                }}
+              >
+                {animocaLoading ? "Generating…" : "Generate Animoca Brief"}
+              </button>
+
+              <button
+                type="button"
+                onClick={copyAnimocaBrief}
+                disabled={!animocaBrief}
+                style={{
+                  padding: "0.75rem 1rem",
+                  background: animocaBrief ? "white" : "#f3f4f6",
+                  color: "#111827",
+                  border: "2px solid #e5e7eb",
+                  borderRadius: "12px",
+                  fontWeight: 700,
+                  cursor: animocaBrief ? "pointer" : "not-allowed",
+                }}
+              >
+                Copy Animoca Brief
+              </button>
+
+              <button
+                type="button"
+                onClick={sendAnimocaEmail}
+                disabled={animocaSendLoading || !(analysisIdInput.trim() || currentPersistedAnalysis?.analysis_id)}
+                style={{
+                  padding: "0.75rem 1rem",
+                  background: animocaSendLoading ? "#9ca3af" : "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "12px",
+                  fontWeight: 800,
+                  cursor: animocaSendLoading ? "not-allowed" : "pointer",
+                }}
+              >
+                {animocaSendLoading ? "Sending…" : "Send to Mind"}
+              </button>
+            </div>
+
+            {animocaStatus && (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.9rem", color: "#374151" }}>
+                {animocaStatus}
+              </div>
+            )}
+
+            {animocaBrief && (
+              <div style={{ marginTop: "0.75rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.25rem" }}>
+                  To: <code>{animocaBrief.to || "evidence.intelligence.engine@amind.ai"}</code>
+                </div>
+                <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+                  Subject: <code>{animocaBrief.subject}</code>
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: "pre-wrap",
+                    padding: "0.9rem",
+                    borderRadius: "12px",
+                    background: "white",
+                    border: "1px solid #e5e7eb",
+                    fontSize: "0.85rem",
+                    lineHeight: 1.55,
+                    maxHeight: "320px",
+                    overflow: "auto",
+                  }}
+                >
+                  {animocaBrief.body_text}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
 
         {error && (
           <div style={{

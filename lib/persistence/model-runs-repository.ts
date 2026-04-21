@@ -1,5 +1,5 @@
 /**
- * Model run audit rows (Phase 5+). Stub keeps a single extension point without wiring from the engine yet.
+ * Model run audit rows (Phase 5). Inserts are driven by `logModelRunNonFatal` / the model router.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";

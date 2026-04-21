@@ -18,7 +18,7 @@ export async function persistCompletedAnalysis(
   client: SupabaseClient,
   input: AnalyzeInput,
   result: AnalyzeResponse
-): Promise<void> {
+): Promise<string> {
   let analysisId: string | null = null;
 
   try {
@@ -195,6 +195,11 @@ export async function persistCompletedAnalysis(
     });
 
     if (rewriteError) throw rewriteError;
+
+    if (!analysisId) {
+      throw new Error("Invariant: analysis persist finished without analysis id");
+    }
+    return analysisId;
   } catch (err) {
     if (analysisId) {
       const { error: delErr } = await client.from("analyses").delete().eq("id", analysisId);

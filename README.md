@@ -7,12 +7,76 @@ Domain-specific evidence calibration for longevity and biohacking-related AI out
 - **Next.js 14** (App Router) – API, dashboard, and demo app
 - **TypeScript** (strict)
 - **Engine** – pure TS modules under `engine/` (claim extraction, evidence map, certainty rules, rewrite, scoring)
-- **LLM** – OpenAI by default; swappable via `engine/llm/provider.ts`
-- **Evidence map** – `data/evidence_map.json` (editable)
+- **LLM** – OpenAI by default; optional tier env vars via `engine/llm/model-router.ts` (single-model fallback matches legacy behavior when unset)
+- **Evidence map (runtime)** – `data/evidence_map.json` (editable); the engine reads this file, not Postgres
+- **Supabase / Postgres (optional)** – persistence, `model_runs`, and internal `animoca_tasks` queue rows when flags are enabled
 
-## Roadmap / EIE v2
+## Architecture (current)
 
-Incremental upgrade plan—including **Phase 1 migration map** (file→service, data→tables), **products/sources**, structured **evidence_entries**, **escalation-aware model routing**, thin API routes, and **Animoca Analyst** boundaries—lives in **[docs/EIE-v2-upgrade-plan.md](docs/EIE-v2-upgrade-plan.md)**.
+| Layer | Role |
+|--------|------|
+| `app/api/*` | Thin routes; **`/api/analyze`** calls `lib/analysis/run-analysis.ts` then returns JSON unchanged |
+| `engine/` | Orchestration (`orchestrator/analyze.ts`), policy, scoring, evidence **JSON** loader, LLM router |
+| `lib/persistence/*` | Optional Supabase writes (`analyses`, `claims`, `evidence_flags`, `rewrites`, `claim_evidence_links`, …) |
+| `lib/model-runs/*` | Non-fatal audit inserts when persistence flag + Supabase env are on |
+| `lib/animoca/*` | **Internal only**: brief builder + `animoca_tasks` enqueue helpers; no external Animoca API, no sync dependency on analyze |
+
+Phases **1–8** of the v2 plan are implemented in-repo (see **[docs/EIE-v2-upgrade-plan.md](docs/EIE-v2-upgrade-plan.md)**). Phase **9** (review UX) is optional; Phase **10** adds smoke/parity tooling and operational clarity without changing API contracts.
+
+### Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | LLM calls |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (server-side persistence) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role for server writes (never expose to the browser) |
+| `EIE_PERSIST_ANALYSIS` | When `true` / `1` / `yes`, completed analyses may be persisted and `model_runs` may be logged |
+| `EIE_ENQUEUE_ANIMOCA_TASKS` | When set (same truthy rule), best-effort `animoca_tasks` enqueue **after** successful persist (e.g. flagged analyses); failures are non-fatal |
+| `RESEND_API_KEY` | Resend API key (server-side email transport for “Send to Mind”) |
+| `EIE_EMAIL_FROM` | Email sender for Resend (must be verified with Resend) |
+| `EIE_EMAIL_TO_MIND` | Optional override recipient (defaults to `evidence.intelligence.engine@amind.ai`) |
+| `EIE_EMAIL_ANIMOCA_AFTER_ANALYSIS` | Optional auto-send email after persistence when evidence flags exist (OFF by default; non-blocking) |
+| `EIE_OPENAI_MODEL_CHEAP` / `REASONING` / `PREMIUM` | Optional router tiers; omitted → single default model |
+| `PUBMED_EMAIL`, `SEMANTIC_SCHOLAR_API_KEY` | Optional; better limits for literature routes |
+
+Copy **`.env.local.example`** → `.env.local` and fill in secrets.
+
+### Operational commands
+
+```bash
+npm run lint          # ESLint
+npm run build         # Production build + typecheck
+
+npm run smoke         # Parity: /api/analyze scenarios + optional DB coherence (see script header)
+npm run smoke:full    # Also exercises claim-studies, menu-description, product-description (more LLM/network)
+npm run smoke:phase4  # Alias for smoke (backward compatible)
+
+npm run seed:evidence # Import data/evidence_map.json → evidence_entries (Supabase)
+
+# Operator: Animoca email workflow (persisted analysis -> email)
+# - Generate/Copy: uses Supabase only
+# - Send: uses Resend and sends server-side to evidence.intelligence.engine@amind.ai
+# Note: you need a persisted analysis_id (see Supabase or server logs).
+
+# After a run, optional DB-only audit:
+ANALYSIS_ID=<uuid> npm run verify:persistence
+# or: QUERY_PREFIX="EIE smoke persist" npm run verify:persistence
+```
+
+**Smoke / persistence:** For DB checks, the **running dev server** must use the same `EIE_PERSIST_ANALYSIS` and Supabase vars as your shell (see `scripts/eie-smoke.mjs`).
+
+### Animoca boundaries
+
+`lib/animoca/*` builds **structured briefs** from persisted rows and can **insert `animoca_tasks`** for later human or system handoff. There is **no** Animoca HTTP client, webhook, or chat UI; enqueue is **off** unless `EIE_ENQUEUE_ANIMOCA_TASKS` is set, and it never blocks the analyze response.
+
+### “Send to Mind” (email)
+
+The dashboard includes operator tools to:
+- **Generate Animoca Brief** (subject + plain-text body from persisted analysis)
+- **Copy Animoca Brief** (clipboard fallback)
+- **Send to Mind** (server-side email via Resend)
+
+This is **separate** from `/api/analyze` and never blocks analysis completion.
 
 ## Local development
 
@@ -131,9 +195,18 @@ engine/                    # Core evidence intelligence
 data/
   evidence_map.json        # Curated interventions (edit here)
 lib/
+  analysis/run-analysis.ts # App entry: engine + optional persistence
+  persistence/             # Supabase repositories (feature-flagged)
+  model-runs/              # Non-fatal model_runs logging
+  animoca/                 # Analyst scaffolding (tasks + briefs; no external API)
+  supabase/server.ts       # Service-role client (server only)
   pubmed.ts                # Optional PubMed E-utilities (analyze summary)
   study-search.ts          # PubMed + Semantic Scholar (claim-studies)
   use-analysis-state.ts    # Demo URL/query state
+scripts/
+  eie-smoke.mjs            # Parity / smoke checks
+  verify-persistence-coherence.mjs  # DB-only coherence audit
+  seed-evidence-entries.mjs         # evidence_entries import
 components/
   dashboard/
   demo/
