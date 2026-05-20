@@ -1,9 +1,9 @@
 # lucient Evidence Mind Roadmap
 
 **Living document.** Update this file before and after every implementation phase.  
-**Related:** [Stage 1 architecture/privacy gap report](./stage-1-architecture-privacy-gap-report.md) · [EIE v2 upgrade plan](./EIE-v2-upgrade-plan.md)
+**Related:** [Stage 1 architecture/privacy gap report](./stage-1-architecture-privacy-gap-report.md) · [EIE v2 upgrade plan](./EIE-v2-upgrade-plan.md) · [Animoca Minds discovery — repo inventory](./animoca-minds-discovery.md)
 
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-20
 
 ---
 
@@ -180,13 +180,14 @@ These rules apply to all phases unless explicitly revised in the Decision Log wi
 
 **Goal:** Understand how Animoca Minds actually works technically before wiring it deeply into the product.
 
-**Status:** Not started
+**Status:** In progress
 
 **Why this phase exists:**  
 The product strategy depends on making a Mind central, but the current repo only has a basic email/task scaffold. Before building around Animoca Minds, we need to confirm whether Minds can call APIs, receive tasks, store memory, use tools, manage permissions, or operate as the product front door.
 
 **Tasks:**
 
+- [x] Inventory current repository scaffold and document assumptions (**deliverable:** [`animoca-minds-discovery.md`](./animoca-minds-discovery.md)).
 - [ ] Find or request official Animoca Minds developer documentation.
 - [ ] Confirm whether Minds supports API calls.
 - [ ] Confirm whether Minds supports webhooks.
@@ -199,7 +200,7 @@ The product strategy depends on making a Mind central, but the current repo only
 - [ ] Confirm whether one Evidence Mind can manage many private client workspaces, or whether each client needs a separate Mind instance.
 - [ ] Confirm how permissions, secrets, API keys, workspace IDs, and client-private data are handled.
 - [ ] Confirm whether Minds can support a redacted/private-content approval workflow.
-- [ ] Document the confirmed integration model before implementation.
+- [ ] Document the confirmed integration model before implementation (**repo-side inventory done; awaits external Animoca validation**).
 
 **Candidate integration patterns to evaluate:**
 
@@ -392,17 +393,15 @@ A short technical note is added to this roadmap or a linked doc confirming:
 
 ## 6. Immediate Next Step
 
-**The next step after this roadmap is Phase A only: Animoca Minds Discovery.**
+Phase A (**Animoca Minds Discovery**) is **in progress**.
+
+**Repo inventory:** see [`animoca-minds-discovery.md`](./animoca-minds-discovery.md) for what exists today versus what Animoca still must confirm.
+
+**Next substantive step:** obtain official Animoca Minds technical guidance (APIs, webhooks, tools, intake channels, tenancy/memory — see Phase A checklist and §9).
 
 Do **not** implement Phase 1 until explicitly instructed.
 
-Before starting any phase, update §8 Task Tracker and follow §10 Cursor/Codex Working Rule.
-
-Suggested next task:
-
-```txt
-Start Phase A only. Do not edit application code. Review the repo’s current Animoca/Mind scaffold and create a short technical discovery note listing what is currently implemented, what is unknown, and what external Animoca Minds capabilities must be confirmed before implementation.
-```
+Before continuing any phase, update §8 Task Tracker and follow §10 Cursor/Codex Working Rule.
 
 ---
 
@@ -431,16 +430,17 @@ Start Phase A only. Do not edit application code. Review the repo’s current An
 | 0 | Define decision log | Done | §7 |
 | 0 | Define task status format | Done | §8 header |
 | 0 | Add Animoca Minds discovery phase | Done | Phase A added before implementation phases |
+| A | Repository scaffold inventory (Phase A discovery) | Done | [`animoca-minds-discovery.md`](./animoca-minds-discovery.md) |
 | A | Find/request official Animoca Minds developer documentation | Not started | Required before deep integration |
 | A | Confirm Minds API support | Not started | |
 | A | Confirm webhook support | Not started | |
-| A | Confirm email/task intake support | Not started | Current repo assumes email possible |
+| A | Confirm email/task intake support | In progress | EIE can emit email + DB tasks outbound; Animoca ingestion of that channel not confirmed ([discovery doc](./animoca-minds-discovery.md)) |
 | A | Confirm Telegram/chat intake support | Not started | |
 | A | Confirm file/document ingestion support | Not started | |
 | A | Confirm persistent memory and workspace segmentation | Not started | Critical for client-private model |
 | A | Confirm whether Mind can call `/api/analyze` as a tool | Not started | Important for Mind-as-front-door model |
-| A | Decide likely integration pattern | Not started | EIE → Mind, Mind → EIE, product-layer hybrid |
-| A | Document confirmed vs assumed integration details | Not started | Add to roadmap or linked doc |
+| A | Decide likely integration pattern | In progress | **Preliminary (code today):** EIE → Mind push; strategic “Mind-as-layer” awaits Animoca capabilities |
+| A | Document confirmed vs assumed integration details | In progress | Repo-side capture in discovery doc; **external confirmations still open** |
 | 1 | Add `clients` table | Not started | Awaiting explicit Phase 1 approval |
 | 1 | Add `client_workspaces` table | Not started | |
 | 1 | Add workspace settings/profile structure | Not started | |
@@ -510,6 +510,8 @@ Start Phase A only. Do not edit application code. Review the repo’s current An
 | 12 | **What content can be safely sent to a Mind under Animoca’s infrastructure?** | Legal/privacy review |
 | 13 | **Does Minds support file uploads or document ingestion?** | Treatment menu/workspace document workflows |
 | 14 | **Should EIE expose tools to the Mind, or should EIE send briefs to the Mind?** | Integration design |
+| 15 | **Is the default `evidence.intelligence.engine@amind.ai` recipient an automated Mind intake, a shared ops mailbox, or both?** | Validates whether outbound Resend is a supported integration primitive |
+| 16 | **Should `animoca_tasks` rows be coupled to Animoca infra, or remain an internal EIE operator/worker queue?** | Naming implies Mind alignment; today there is **no repo consumer** of queued tasks |
 
 Record answers in the Decision Log when resolved.
 
@@ -549,3 +551,4 @@ For Animoca Minds-related work:
 |------|--------|
 | 2026-05-16 | Initial roadmap created from Stage 1 report and lucient Evidence Mind strategic direction |
 | 2026-05-16 | Added Animoca Minds Discovery phase, integration assumptions, Minds-related open questions, and safety rules |
+| 2026-05-20 | Phase A started (`In progress`); added [`animoca-minds-discovery.md`](./animoca-minds-discovery.md) (repo inventory); updated §6, §8–§9; preliminary integration-pattern note (EIE→Mind from current scaffold) |
