@@ -241,9 +241,27 @@ function extractClaimOutcomeTerms(claimText: string, maxTerms = 3): string[] {
   return extractOutcomeTerms(claimText, maxTerms);
 }
 
+const SUBSTANCE_TERMS = [
+  "caffeine",
+  "l-theanine",
+  "theanine",
+  "melatonin",
+  "antioxidant",
+  "antioxidants",
+  "polyphenol",
+  "polyphenols",
+  "egcg",
+];
+
 function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
   const lower = claimText.toLowerCase();
   const terms = new Set<string>();
+
+  for (const substance of SUBSTANCE_TERMS) {
+    if (lower.includes(substance)) {
+      terms.add(substance === "l-theanine" ? "theanine" : substance.replace(/s$/, ""));
+    }
+  }
 
   if (lower.includes("jasmine")) {
     terms.add("jasmine");
@@ -270,6 +288,21 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
   return [...terms];
 }
 
+/** Keywords used to match fetched papers back to a specific claim. */
+export function getClaimLiteratureKeywords(
+  claimText: string,
+  originalQuery: string
+): string[] {
+  const keywords = new Set<string>();
+  for (const term of extractClaimSubjectTerms(claimText, originalQuery)) {
+    keywords.add(term.toLowerCase());
+  }
+  for (const term of extractClaimOutcomeTerms(claimText, 5)) {
+    keywords.add(term.toLowerCase());
+  }
+  return [...keywords].filter((keyword) => keyword.length >= 4);
+}
+
 function buildTermsPubMedClause(terms: string[]): string {
   if (terms.length === 0) return "";
   const clauses = [...new Set(terms.map((term) => quotePubMedPhrase(term)).filter(Boolean))];
@@ -285,10 +318,12 @@ export function buildClaimPubMedQuery(claimText: string, originalQuery: string):
   const claimOutcomes = extractClaimOutcomeTerms(claimText);
   const queryOutcomes = extractOutcomeTerms(originalQuery);
   const outcomes = [...claimOutcomes];
-  for (const outcome of queryOutcomes) {
-    const normalized = outcome.replace(/s$/, "");
-    if (!outcomes.some((existing) => existing.replace(/s$/, "") === normalized)) {
-      outcomes.push(outcome);
+  if (outcomes.length === 0) {
+    for (const outcome of queryOutcomes) {
+      const normalized = outcome.replace(/s$/, "");
+      if (!outcomes.some((existing) => existing.replace(/s$/, "") === normalized)) {
+        outcomes.push(outcome);
+      }
     }
   }
 

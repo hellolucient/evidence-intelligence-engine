@@ -25,37 +25,28 @@ export function rollupLiterature(
   claimStudyData?: ClaimStudyData[],
   topicStudyData?: TopicStudyData
 ): LiteratureSummary | undefined {
-  const topicRct = Math.max(
-    pubmedSummary?.rct_count ?? 0,
-    topicStudyData?.rct_count ?? 0
-  );
-  const topicMeta = Math.max(
-    pubmedSummary?.meta_analysis_count ?? 0,
-    topicStudyData?.meta_analysis_count ?? 0
-  );
+  const pubmedRctPool = pubmedSummary?.rct_count ?? 0;
+  const pubmedMetaPool = pubmedSummary?.meta_analysis_count ?? 0;
   const publicationVolume = pubmedSummary?.publication_volume_last_10_years ?? 0;
 
-  let claimRct = 0;
-  let claimMeta = 0;
-  for (const claimData of claimStudyData ?? []) {
-    claimRct += claimData.rct_count;
-    claimMeta += claimData.meta_analysis_count;
-  }
+  const linkedPapers = collectUniqueStudies(topicStudyData, ...(claimStudyData ?? []));
+  const uniqueClaimPapers = collectUniqueStudies(...(claimStudyData ?? []));
 
-  const uniqueStudies = collectUniqueStudies(topicStudyData, ...(claimStudyData ?? []));
+  const claimsSearched = claimStudyData?.length ?? 0;
+  const claimsWithMatches =
+    claimStudyData?.filter((claimData) => claimData.studies.length > 0).length ?? 0;
 
   if (!pubmedSummary && !claimStudyData?.length && !topicStudyData) {
     return undefined;
   }
 
   return {
-    topic_rct_count: topicRct,
-    topic_meta_analysis_count: topicMeta,
-    claim_rct_count: claimRct,
-    claim_meta_analysis_count: claimMeta,
-    combined_rct_count: Math.max(topicRct, claimRct),
-    combined_meta_analysis_count: Math.max(topicMeta, claimMeta),
-    total_studies_found: uniqueStudies.size,
+    pubmed_rct_pool: pubmedRctPool,
+    pubmed_meta_pool: pubmedMetaPool,
+    linked_papers_count: linkedPapers.size,
+    claims_searched: claimsSearched,
+    claims_with_matches: claimsWithMatches,
+    unique_claim_papers: uniqueClaimPapers.size,
     publication_volume_last_10_years: publicationVolume,
   };
 }

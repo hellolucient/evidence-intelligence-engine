@@ -88,13 +88,18 @@ export interface PubMedSummary {
 
 /** Rolled-up literature counts across topic-level PubMed and per-claim searches. */
 export interface LiteratureSummary {
-  topic_rct_count: number;
-  topic_meta_analysis_count: number;
-  claim_rct_count: number;
-  claim_meta_analysis_count: number;
-  combined_rct_count: number;
-  combined_meta_analysis_count: number;
-  total_studies_found: number;
+  /** Total RCTs returned by PubMed count API for the query topic. */
+  pubmed_rct_pool: number;
+  /** Total meta-analyses returned by PubMed count API for the query topic. */
+  pubmed_meta_pool: number;
+  /** Unique linked papers shown across topic + claim results. */
+  linked_papers_count: number;
+  /** Claims searched for literature. */
+  claims_searched: number;
+  /** Claims with at least one matched linked paper. */
+  claims_with_matches: number;
+  /** Unique papers matched across claim-specific filters. */
+  unique_claim_papers: number;
   publication_volume_last_10_years: number;
 }
 

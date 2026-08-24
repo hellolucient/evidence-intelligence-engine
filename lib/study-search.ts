@@ -8,6 +8,7 @@ import {
   buildPlainLiteratureQuery,
   buildPlainTopicQuery,
   buildTopicPubMedQuery,
+  getClaimLiteratureKeywords,
 } from "@/lib/literature-query";
 
 export interface Study {
@@ -235,6 +236,22 @@ async function searchMetaAnalyses(
   return unique.slice(0, 10);
 }
 
+function filterStudiesForClaim(
+  studies: Study[],
+  claimText: string,
+  originalQuery: string
+): Study[] {
+  const keywords = getClaimLiteratureKeywords(claimText, originalQuery);
+  if (keywords.length === 0) return studies.slice(0, 8);
+
+  const matched = studies.filter((study) => {
+    const haystack = study.title.toLowerCase();
+    return keywords.some((keyword) => haystack.includes(keyword));
+  });
+
+  return matched.slice(0, 10);
+}
+
 /**
  * Multi-source search for RCTs and meta-analyses related to a user query topic.
  */
@@ -305,9 +322,12 @@ export async function searchStudiesForClaim(
     }
   }
 
+  const filteredRcts = filterStudiesForClaim(uniqueRCTs, claimText, originalQuery);
+  const filteredMeta = filterStudiesForClaim(metaAnalyses, claimText, originalQuery);
+
   return {
-    rct_count: uniqueRCTs.length,
-    meta_analysis_count: metaAnalyses.length,
-    studies: [...uniqueRCTs.slice(0, 15), ...metaAnalyses.slice(0, 5)],
+    rct_count: filteredRcts.length,
+    meta_analysis_count: filteredMeta.length,
+    studies: [...filteredRcts.slice(0, 10), ...filteredMeta.slice(0, 3)],
   };
 }

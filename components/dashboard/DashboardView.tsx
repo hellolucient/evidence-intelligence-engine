@@ -83,12 +83,12 @@ function insertFlagMarkers(
 
 function LinkedStudiesPanel({
   studies,
-  rctCount,
-  metaCount,
+  pubmedRctPool,
+  pubmedMetaPool,
 }: {
   studies: Study[];
-  rctCount: number;
-  metaCount: number;
+  pubmedRctPool?: number;
+  pubmedMetaPool?: number;
 }) {
   const [expanded, setExpanded] = useState(true);
   if (studies.length === 0) return null;
@@ -111,7 +111,13 @@ function LinkedStudiesPanel({
           Linked Studies ({studies.length})
         </p>
         <p style={{ margin: 0, fontSize: "0.78rem", color: "#6b7280" }}>
-          {rctCount} RCT{rctCount !== 1 ? "s" : ""} · {metaCount} Meta-analys{metaCount !== 1 ? "es" : "is"}
+          Showing {studies.length} linked paper{studies.length !== 1 ? "s" : ""}
+          {typeof pubmedRctPool === "number" && pubmedRctPool > 0
+            ? ` · ${pubmedRctPool} RCTs in PubMed`
+            : ""}
+          {typeof pubmedMetaPool === "number" && pubmedMetaPool > 0
+            ? ` · ${pubmedMetaPool} meta-analyses in PubMed`
+            : ""}
         </p>
         <button
           type="button"
@@ -282,12 +288,16 @@ function ClaimCard({
               Evidence:
             </span>
             <span>
-              {studyData.rct_count} RCT{studyData.rct_count !== 1 ? 's' : ''}
+              {studyData.studies.length} stud{studyData.studies.length !== 1 ? "ies" : "y"} matched this claim
             </span>
-            <span style={{ color: "#9ca3af" }}>·</span>
-            <span>
-              {studyData.meta_analysis_count} Meta-analys{studyData.meta_analysis_count !== 1 ? 'es' : 'is'}
-            </span>
+            {studyData.meta_analysis_count > 0 && (
+              <>
+                <span style={{ color: "#9ca3af" }}>·</span>
+                <span>
+                  {studyData.meta_analysis_count} meta-analys{studyData.meta_analysis_count !== 1 ? "es" : "is"}
+                </span>
+              </>
+            )}
             {studyData.studies.length > 0 && (
               <>
                 <span style={{ color: "#9ca3af" }}>·</span>
@@ -1254,15 +1264,10 @@ export function DashboardView() {
                   {result.literature_summary ? (
                     <>
                       <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.95rem", fontWeight: 700, lineHeight: 1.3, color: "#111827" }}>
-                        {result.literature_summary.combined_rct_count} RCTs · {result.literature_summary.combined_meta_analysis_count} Meta-analyses
-                        {result.literature_summary.total_studies_found > 0
-                          ? ` · ${result.literature_summary.total_studies_found} studies linked`
-                          : ""}
+                        {result.literature_summary.pubmed_rct_pool} RCTs in PubMed · {result.literature_summary.pubmed_meta_pool} meta-analyses · {result.literature_summary.linked_papers_count} papers linked
                       </p>
                       <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>
-                        Topic PubMed: {result.literature_summary.topic_rct_count} RCTs · {result.literature_summary.topic_meta_analysis_count} Meta-analyses
-                        {" · "}
-                        Claim search: {result.literature_summary.claim_rct_count} RCTs · {result.literature_summary.claim_meta_analysis_count} Meta-analyses
+                        {result.literature_summary.claims_with_matches} of {result.literature_summary.claims_searched} claims matched specific papers · {result.literature_summary.unique_claim_papers} unique claim papers
                       </p>
                     </>
                   ) : result.pubmed_summary ? (
@@ -1279,8 +1284,8 @@ export function DashboardView() {
               {result.topic_study_data && result.topic_study_data.studies.length > 0 && (
                 <LinkedStudiesPanel
                   studies={result.topic_study_data.studies}
-                  rctCount={result.topic_study_data.rct_count}
-                  metaCount={result.topic_study_data.meta_analysis_count}
+                  pubmedRctPool={result.literature_summary?.pubmed_rct_pool}
+                  pubmedMetaPool={result.literature_summary?.pubmed_meta_pool}
                 />
               )}
               {result.evidence_flags && result.evidence_flags.length > 0 && transparencyOn && (
