@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useAnalysisState } from "@/lib/use-analysis-state";
 import type { EvidenceFlag, ExtractedClaim, Study } from "@/engine/types";
 
@@ -552,6 +553,19 @@ export function DashboardView() {
     };
   }, [isDragging, dragOffset]);
 
+  const descriptionModalOpen =
+    (descriptionModalType === "menu" && !!menuDescriptions?.length) ||
+    (descriptionModalType === "product" && !!productDescriptions?.length);
+
+  useEffect(() => {
+    if (!descriptionModalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [descriptionModalOpen]);
+
   return (
     <div style={{ 
       width: "100%", 
@@ -904,32 +918,31 @@ export function DashboardView() {
         )}
 
         {/* Menu / Product Descriptions Modal */}
-        {((descriptionModalType === "menu" && menuDescriptions?.length) || (descriptionModalType === "product" && productDescriptions?.length)) && (() => {
+        {descriptionModalOpen && (() => {
           const descriptions = descriptionModalType === "menu" ? menuDescriptions! : productDescriptions!;
           const isProduct = descriptionModalType === "product";
           const which = descriptionModalType;
           const closeModal = () => {
             setDescriptionModalType(null);
+            setModalPosition(null);
             if (which === "menu") setMenuDescriptions(null);
             else setProductDescriptions(null);
           };
-          return (
-          <>
+          return createPortal(
             <div
               onClick={closeModal}
               style={{
                 position: "fixed",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
+                inset: 0,
                 background: "rgba(0, 0, 0, 0.6)",
                 backdropFilter: "blur(4px)",
-                zIndex: 1000,
+                zIndex: 9999,
                 display: "flex",
-                alignItems: "center",
+                alignItems: "flex-start",
                 justifyContent: "center",
-                padding: "2rem"
+                padding: "max(1.5rem, 4vh) 2rem 2rem",
+                overflowY: "auto",
+                boxSizing: "border-box",
               }}
             >
               <div
@@ -942,14 +955,13 @@ export function DashboardView() {
                   padding: "2rem",
                   maxWidth: "800px",
                   width: "100%",
-                  maxHeight: "90vh",
+                  maxHeight: "min(90vh, calc(100vh - 3rem))",
                   overflowY: "auto",
                   boxShadow: isProduct ? "0 20px 60px rgba(14, 165, 233, 0.3), 0 0 0 1px rgba(14, 165, 233, 0.2)" : "0 20px 60px rgba(139, 92, 246, 0.4), 0 0 0 1px rgba(139, 92, 246, 0.2)",
-                  position: modalPosition ? "absolute" : "relative",
+                  position: modalPosition ? "fixed" : "relative",
                   left: modalPosition ? `${modalPosition.x}px` : undefined,
                   top: modalPosition ? `${modalPosition.y}px` : undefined,
-                  transform: modalPosition ? undefined : undefined,
-                  zIndex: 1001,
+                  zIndex: 10000,
                   cursor: isDragging ? "grabbing" : "grab",
                   border: isProduct ? "2px solid #38bdf8" : "2px solid #c084fc"
                 }}
@@ -1078,8 +1090,8 @@ export function DashboardView() {
                   })}
                 </div>
               </div>
-            </div>
-          </>
+            </div>,
+            document.body
           );
         })()}
 
