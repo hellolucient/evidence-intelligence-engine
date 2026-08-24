@@ -43,7 +43,9 @@ export type EvidenceFlagType =
   | "lifespan_certainty_mismatch"
   | "mechanism_to_lifespan_extrapolation"
   | "unsupported_causal_framing"
-  | "minor_certainty_inflation";
+  | "minor_certainty_inflation"
+  | "intervention_not_in_evidence_map"
+  | "tangential_scope_match";
 
 export interface EvidenceFlag {
   type: EvidenceFlagType;
@@ -84,6 +86,18 @@ export interface PubMedSummary {
   publication_volume_last_10_years: number;
 }
 
+/** Rolled-up literature counts across topic-level PubMed and per-claim searches. */
+export interface LiteratureSummary {
+  topic_rct_count: number;
+  topic_meta_analysis_count: number;
+  claim_rct_count: number;
+  claim_meta_analysis_count: number;
+  combined_rct_count: number;
+  combined_meta_analysis_count: number;
+  total_studies_found: number;
+  publication_volume_last_10_years: number;
+}
+
 export interface ClaimPubMedData {
   claim_index: number;
   rct_count: number;
@@ -115,6 +129,7 @@ export interface AnalyzeResponse {
   evidence_flags: EvidenceFlag[];
   coherence_score: number;
   pubmed_summary?: PubMedSummary;
+  literature_summary?: LiteratureSummary;
   claim_pubmed_data?: ClaimPubMedData[];
   claim_study_data?: ClaimStudyData[];
 }

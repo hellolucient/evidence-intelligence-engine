@@ -3,6 +3,7 @@
  */
 
 import seedEvidenceMap from "@/data/evidence_map.json";
+import { extractPrimarySubject } from "@/lib/literature-query";
 import type { EvidenceMapEntry } from "../types";
 
 let cachedMap: EvidenceMapEntry[] | null = null;
@@ -76,5 +77,50 @@ export function getMentionedInterventions(
 export function isQueryInScope(map: EvidenceMapEntry[], query: string): boolean {
   const mentioned = getMentionedInterventions(map, query);
   return mentioned.length > 0;
+}
+
+export interface QueryScopeAnalysis {
+  matchedInterventions: EvidenceMapEntry[];
+  primarySubject: string;
+  primarySubjectInMap: boolean;
+  tangentialMatchOnly: boolean;
+}
+
+function primarySubjectMatchesEntry(subject: string, entry: EvidenceMapEntry): boolean {
+  const normalizedSubject = normalize(subject);
+  const normalizedIntervention = normalize(entry.intervention);
+  if (!normalizedSubject) return false;
+
+  return (
+    normalizedSubject === normalizedIntervention ||
+    normalizedSubject.includes(normalizedIntervention) ||
+    normalizedIntervention.includes(normalizedSubject)
+  );
+}
+
+/**
+ * Determine whether scope came from the query's primary subject or only a tangential keyword.
+ * e.g. "jasmine tea for sleep" matches sleep optimization via "sleep", not jasmine tea.
+ */
+export function analyzeQueryScope(
+  map: EvidenceMapEntry[],
+  query: string
+): QueryScopeAnalysis {
+  const matchedInterventions = getMentionedInterventions(map, query);
+  const primarySubject = extractPrimarySubject(query);
+
+  const primarySubjectInMap =
+    !!primarySubject &&
+    matchedInterventions.some((entry) => primarySubjectMatchesEntry(primarySubject, entry));
+
+  const tangentialMatchOnly =
+    matchedInterventions.length > 0 && !!primarySubject && !primarySubjectInMap;
+
+  return {
+    matchedInterventions,
+    primarySubject,
+    primarySubjectInMap,
+    tangentialMatchOnly,
+  };
 }
 

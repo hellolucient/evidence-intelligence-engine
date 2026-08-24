@@ -102,9 +102,14 @@ function formatEvidenceContext(
     lines.push("No flags detected - evidence alignment is good.");
   } else {
     flags.forEach((f, idx) => {
-      const claim = claims[f.claim_index];
+      const claim =
+        f.claim_index >= 0 ? claims[f.claim_index] : undefined;
       lines.push(`FLAG ${idx + 1}: [${f.type}] Penalty: -${f.penalty}`);
-      lines.push(`  Claim: "${claim.claim_text}"`);
+      if (claim) {
+        lines.push(`  Claim: "${claim.claim_text}"`);
+      } else {
+        lines.push(`  Scope: query-level flag`);
+      }
       lines.push(`  Issue: ${f.message}`);
       lines.push(`  ACTION REQUIRED: Soften this claim significantly.`);
     });

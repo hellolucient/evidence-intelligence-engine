@@ -1,0 +1,204 @@
+/**
+ * Shared PubMed / literature search query building.
+ */
+
+const QUERY_NOISE_WORDS = new Set([
+  "energises", "energize", "energizes", "energising", "energizing",
+  "benefits", "benefit", "what", "does", "can", "will", "how", "why", "when", "is", "are",
+  "help", "helps", "treat", "treats", "fix", "fixes", "cure", "cures",
+  "good", "bad", "safe", "best", "worst", "really", "actually",
+  "tell", "explain", "describe", "list", "give", "find", "get", "use", "using",
+  "should", "could", "would", "may", "might", "recommend", "recommendation",
+  "there", "value", "worth", "anyone", "anybody", "someone", "something",
+  "about", "into", "from", "than", "then", "also", "just", "even", "still",
+  "your", "their", "they", "them", "this", "that", "these", "those",
+]);
+
+const OUTCOME_VERBS = new Set([
+  "improve", "improves", "improved", "improving",
+  "increase", "increases", "increased", "increasing",
+  "reduce", "reduces", "reduced", "reducing",
+  "decrease", "decreases", "decreased", "decreasing",
+  "help", "helps", "helped", "helping",
+  "boost", "boosts", "boosted", "boosting",
+  "enhance", "enhances", "enhanced", "enhancing",
+  "support", "supports", "supported", "supporting",
+  "promote", "promotes", "promoted", "promoting",
+  "extend", "extends", "extended", "extending",
+  "prevent", "prevents", "prevented", "preventing",
+  "cause", "causes", "caused", "causing",
+  "affect", "affects", "affected", "affecting",
+  "benefit", "benefits", "benefited", "benefiting",
+  "optimize", "optimizes", "optimized", "optimizing",
+]);
+
+const CLAIM_STOP_WORDS = new Set([
+  ...QUERY_NOISE_WORDS,
+  ...OUTCOME_VERBS,
+  "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
+  "has", "have", "had", "do", "does", "did", "be", "been", "being",
+  "show", "shows", "showed", "showing", "suggest", "suggests", "suggested", "suggesting",
+  "indicate", "indicates", "indicated", "indicating",
+  "demonstrate", "demonstrates", "demonstrated", "demonstrating",
+  "lead", "leads", "led", "leading", "result", "results", "resulted", "resulting",
+  "better", "best", "more", "less", "much", "very", "also", "well", "good", "great",
+  "levels", "level", "function", "functions", "process", "processes", "mechanism", "mechanisms",
+  "some", "certain", "potential", "possible", "likely", "generally", "typically",
+  "often", "sometimes", "usually", "commonly", "known", "thought", "believed",
+]);
+
+function normalizeToken(word: string): string {
+  return word.toLowerCase().replace(/[^\w]/g, "");
+}
+
+function tokenize(text: string): string[] {
+  return text
+    .replace(/\?/g, " ")
+    .split(/\s+/)
+    .map(normalizeToken)
+    .filter((word) => word.length >= 2);
+}
+
+/** Wrap multi-word phrases for tighter PubMed title/abstract matching. */
+export function quotePubMedPhrase(term: string): string {
+  const cleaned = term.trim().replace(/\s+/g, " ");
+  if (!cleaned) return "";
+  if (cleaned.includes(" ")) {
+    return `"${cleaned}"[tiab]`;
+  }
+  return `${cleaned}[tiab]`;
+}
+
+/**
+ * Extract the primary intervention/subject from a user query.
+ * e.g. "jasmine tea will improve your sleep" -> "jasmine tea"
+ */
+export function extractPrimarySubject(query: string): string {
+  const words = query
+    .replace(/\?/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+
+  const meaningful: string[] = [];
+  for (const word of words) {
+    const token = normalizeToken(word);
+    if (!token) continue;
+
+    if (OUTCOME_VERBS.has(token)) break;
+
+    if (QUERY_NOISE_WORDS.has(token)) {
+      if (meaningful.length > 0) break;
+      continue;
+    }
+
+    meaningful.push(word);
+    if (meaningful.length >= 4) break;
+  }
+
+  return meaningful.join(" ").trim();
+}
+
+/**
+ * Extract likely health outcome terms from query or claim text.
+ */
+export function extractOutcomeTerms(text: string, maxTerms = 2): string[] {
+  const tokens = tokenize(text);
+  const outcomes: string[] = [];
+
+  const verbIndex = tokens.findIndex((token) => OUTCOME_VERBS.has(token));
+  const searchTokens = verbIndex >= 0 ? tokens.slice(verbIndex + 1) : tokens;
+
+  for (const token of searchTokens) {
+    if (CLAIM_STOP_WORDS.has(token)) continue;
+    if (token.length < 4) continue;
+    if (!outcomes.includes(token)) {
+      outcomes.push(token);
+    }
+    if (outcomes.length >= maxTerms) break;
+  }
+
+  return outcomes;
+}
+
+/**
+ * Build a PubMed search query from a user question.
+ */
+export function buildTopicPubMedQuery(query: string): string {
+  const subject = extractPrimarySubject(query);
+  const outcomes = extractOutcomeTerms(query);
+
+  const parts: string[] = [];
+  if (subject) parts.push(quotePubMedPhrase(subject));
+  for (const outcome of outcomes) {
+    const quoted = quotePubMedPhrase(outcome);
+    if (quoted && !parts.includes(quoted)) parts.push(quoted);
+  }
+
+  if (parts.length === 0) {
+    const fallback = tokenize(query).slice(0, 3).join(" ");
+    return quotePubMedPhrase(fallback || "longevity");
+  }
+
+  return parts.join(" AND ");
+}
+
+/**
+ * Build a PubMed search query for a specific claim.
+ */
+export function buildClaimPubMedQuery(claimText: string, originalQuery: string): string {
+  const subject = extractPrimarySubject(originalQuery);
+  const claimOutcomes = extractOutcomeTerms(claimText);
+  const queryOutcomes = extractOutcomeTerms(originalQuery);
+  const outcomes = [...claimOutcomes];
+  for (const outcome of queryOutcomes) {
+    if (!outcomes.includes(outcome)) outcomes.push(outcome);
+  }
+
+  const parts: string[] = [];
+  if (subject) parts.push(quotePubMedPhrase(subject));
+  for (const outcome of outcomes.slice(0, 2)) {
+    const quoted = quotePubMedPhrase(outcome);
+    if (quoted && !parts.includes(quoted)) parts.push(quoted);
+  }
+
+  if (parts.length === 0) {
+    return buildTopicPubMedQuery(originalQuery);
+  }
+
+  return parts.join(" AND ");
+}
+
+/**
+ * Build a plain-text query for Semantic Scholar and other non-PubMed APIs.
+ */
+export function buildPlainLiteratureQuery(
+  claimText: string,
+  originalQuery: string
+): string {
+  const subject = extractPrimarySubject(originalQuery);
+  const claimOutcomes = extractOutcomeTerms(claimText);
+  const queryOutcomes = extractOutcomeTerms(originalQuery);
+  const outcomes = [...claimOutcomes];
+  for (const outcome of queryOutcomes) {
+    if (!outcomes.includes(outcome)) outcomes.push(outcome);
+  }
+
+  const parts = [subject, ...outcomes.slice(0, 2)].filter(Boolean);
+  return parts.join(" ").trim() || originalQuery.replace(/\?/g, "").trim();
+}
+
+export function buildPlainTopicQuery(query: string): string {
+  const subject = extractPrimarySubject(query);
+  const outcomes = extractOutcomeTerms(query);
+  const parts = [subject, ...outcomes].filter(Boolean);
+  return parts.join(" ").trim() || query.replace(/\?/g, "").trim();
+}
+
+/** @deprecated Use buildClaimPubMedQuery */
+export function extractClaimSearchTerms(
+  claimText: string,
+  originalQuery: string
+): string {
+  return buildClaimPubMedQuery(claimText, originalQuery);
+}

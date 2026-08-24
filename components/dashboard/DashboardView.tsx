@@ -41,6 +41,8 @@ function insertFlagMarkers(
   const sortedFlags = [...flags].sort((a, b) => a.claim_index - b.claim_index);
 
   for (const flag of sortedFlags) {
+    if (flag.claim_index < 0) continue;
+
     const claim = claims[flag.claim_index];
     if (!claim) continue;
 
@@ -1125,16 +1127,34 @@ export function DashboardView() {
                     </p>
                   </div>
                 )}
-                {/* PubMed Evidence: always show when we have a result so user knows we ran the check */}
+                {/* Literature evidence: combined rollup with topic vs claim breakdown */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
                   <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
-                    PubMed Evidence
+                    Literature Evidence
                   </p>
-                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.9rem", fontWeight: 600, lineHeight: 1.2 }}>
-                    {result.pubmed_summary
-                      ? `${result.pubmed_summary.rct_count} RCTs · ${result.pubmed_summary.meta_analysis_count} Meta-analyses`
-                      : "Unavailable"}
-                  </p>
+                  {result.literature_summary ? (
+                    <>
+                      <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.95rem", fontWeight: 700, lineHeight: 1.3, color: "#111827" }}>
+                        {result.literature_summary.combined_rct_count} RCTs · {result.literature_summary.combined_meta_analysis_count} Meta-analyses
+                        {result.literature_summary.total_studies_found > 0
+                          ? ` · ${result.literature_summary.total_studies_found} studies linked`
+                          : ""}
+                      </p>
+                      <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>
+                        Topic PubMed: {result.literature_summary.topic_rct_count} RCTs · {result.literature_summary.topic_meta_analysis_count} Meta-analyses
+                        {" · "}
+                        Claim search: {result.literature_summary.claim_rct_count} RCTs · {result.literature_summary.claim_meta_analysis_count} Meta-analyses
+                      </p>
+                    </>
+                  ) : result.pubmed_summary ? (
+                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.9rem", fontWeight: 600, lineHeight: 1.2 }}>
+                      {result.pubmed_summary.rct_count} RCTs · {result.pubmed_summary.meta_analysis_count} Meta-analyses
+                    </p>
+                  ) : (
+                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.9rem", fontWeight: 600, lineHeight: 1.2 }}>
+                      Unavailable
+                    </p>
+                  )}
                 </div>
               </div>
               {result.evidence_flags && result.evidence_flags.length > 0 && transparencyOn && (
@@ -1168,6 +1188,11 @@ export function DashboardView() {
                           }}></span>
                           <div style={{ flex: 1 }}>
                             <span style={{ fontWeight: 700 }}>[{f.type}]</span> −{f.penalty}: {f.message}
+                            {f.claim_index < 0 && (
+                              <span style={{ marginLeft: "0.5rem", fontSize: "0.8rem", color: "#6b7280" }}>
+                                (query scope)
+                              </span>
+                            )}
                           </div>
                         </div>
                       );

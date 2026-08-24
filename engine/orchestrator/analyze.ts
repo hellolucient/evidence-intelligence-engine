@@ -147,7 +147,7 @@ export async function analyze(
     userMessage: input.query,
   });
   const claims = await extractClaims(raw_response, router);
-  const evidence_flags = detectFlags(claims, evidenceMap);
+  const evidence_flags = detectFlags(claims, evidenceMap, input.query);
   const coherence_score = computeCoherenceScore(evidence_flags);
   const guarded_response = await rewriteResponse(
     raw_response,
@@ -163,9 +163,8 @@ export async function analyze(
 
   // Always run PubMed when requested (topic-level RCT/meta counts)
   if (input.includePubmed) {
-    const topic = input.query.slice(0, 80).replace(/\?/g, "").trim();
     try {
-      pubmed_summary = (await fetchPubmed(topic)) ?? undefined;
+      pubmed_summary = (await fetchPubmed(input.query)) ?? undefined;
     } catch (err) {
       console.error("PubMed summary fetch failed:", err);
     }
@@ -206,6 +205,9 @@ export async function analyze(
     }
   }
 
+  const { rollupLiterature } = await import("@/lib/literature-rollup");
+  const literature_summary = rollupLiterature(pubmed_summary, claim_study_data);
+
   return {
     raw_response,
     guarded_response,
@@ -213,6 +215,7 @@ export async function analyze(
     evidence_flags,
     coherence_score,
     pubmed_summary,
+    literature_summary,
     claim_pubmed_data,
     claim_study_data,
   };

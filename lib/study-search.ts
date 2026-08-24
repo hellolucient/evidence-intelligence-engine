@@ -3,6 +3,8 @@
  * Aggregates RCT and meta-analysis counts and returns study links
  */
 
+import { buildClaimPubMedQuery, buildPlainLiteratureQuery } from "@/lib/literature-query";
+
 export interface Study {
   title: string;
   authors: string[];
@@ -134,7 +136,7 @@ async function searchPubMedWithDetails(
     // First, search for paper IDs
     const searchParams = new URLSearchParams({
       db: "pubmed",
-      term: `${query} AND randomized controlled trial`,
+      term: `(${query}) AND randomized controlled trial[pt]`,
       retmode: "json",
       retmax: "20",
     });
@@ -202,13 +204,14 @@ async function searchPubMedWithDetails(
  * Search for meta-analyses
  */
 async function searchMetaAnalyses(
-  query: string,
+  pubmedQuery: string,
+  plainQuery: string,
   email?: string,
   semanticScholarKey?: string
 ): Promise<Study[]> {
   const [pubmedStudies, semanticStudies] = await Promise.all([
-    searchPubMedWithDetails(`${query} AND meta-analysis`, email),
-    searchSemanticScholar(`${query} meta-analysis`, semanticScholarKey),
+    searchPubMedWithDetails(`(${pubmedQuery}) AND meta-analysis[pt]`, email),
+    searchSemanticScholar(`${plainQuery} meta-analysis`, semanticScholarKey),
   ]);
 
   // Combine and deduplicate by title similarity
@@ -234,16 +237,17 @@ export async function searchStudiesForClaim(
   claimText: string,
   originalQuery: string
 ): Promise<StudySearchResult> {
-  const searchTerm = extractClaimSearchTerms(claimText, originalQuery);
+  const pubmedTerm = buildClaimPubMedQuery(claimText, originalQuery);
+  const plainTerm = buildPlainLiteratureQuery(claimText, originalQuery);
 
   const email = process.env.PUBMED_EMAIL;
   const semanticScholarKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
 
   // Search both sources in parallel
   const [pubmedRCTs, semanticRCTs, metaAnalyses] = await Promise.all([
-    searchPubMedWithDetails(searchTerm, email),
-    searchSemanticScholar(searchTerm, semanticScholarKey),
-    searchMetaAnalyses(searchTerm, email, semanticScholarKey),
+    searchPubMedWithDetails(pubmedTerm, email),
+    searchSemanticScholar(plainTerm, semanticScholarKey),
+    searchMetaAnalyses(pubmedTerm, plainTerm, email, semanticScholarKey),
   ]);
 
   // Combine RCTs from both sources and deduplicate
@@ -264,35 +268,4 @@ export async function searchStudiesForClaim(
     meta_analysis_count: metaAnalyses.length,
     studies: [...uniqueRCTs.slice(0, 15), ...metaAnalyses.slice(0, 5)],
   };
-}
-
-/**
- * Extract key search terms from a claim text (reused from pubmed.ts logic)
- */
-function extractClaimSearchTerms(claimText: string, originalQuery: string): string {
-  // Extract main intervention from query
-  const cleaned = originalQuery.replace(/\?/g, "").trim();
-  const interventionTerm = cleaned.split(/\s+/).slice(0, 5).join(" ") || "longevity";
-  
-  const stopWords = new Set([
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-    'may', 'can', 'could', 'might', 'should', 'would', 'is', 'are', 'was', 'were', 'be', 'been',
-    'improve', 'improves', 'improved', 'improving', 'increase', 'increases', 'increased', 'increasing',
-    'reduce', 'reduces', 'reduced', 'reducing', 'help', 'helps', 'helped', 'helping',
-    'show', 'shows', 'showed', 'showing', 'suggest', 'suggests', 'suggested', 'suggesting',
-  ]);
-  
-  const words = claimText
-    .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
-    .split(/\s+/)
-    .filter(word => word.length >= 4 && !stopWords.has(word))
-    .slice(0, 2)
-    .join(' ');
-  
-  if (words && words.length >= 4) {
-    return `${interventionTerm} ${words}`.trim();
-  }
-  
-  return interventionTerm;
 }
