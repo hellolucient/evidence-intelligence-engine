@@ -70,6 +70,59 @@ export function quotePubMedPhrase(term: string): string {
 }
 
 /**
+ * Known subject expansions — PubMed often omits marketing/product phrases like "jasmine tea"
+ * but indexes the underlying compound or category (green tea, L-theanine, etc.).
+ */
+const SUBJECT_SYNONYMS: Record<string, string[]> = {
+  "jasmine tea": ["green tea", "tea", "camellia sinensis", "l-theanine"],
+  "green tea": ["tea", "camellia sinensis", "l-theanine"],
+  "black tea": ["tea", "camellia sinensis"],
+  "herbal tea": ["tea", "herbal"],
+  "chamomile tea": ["chamomile", "tea"],
+  "valerian tea": ["valerian", "tea"],
+};
+
+function getSubjectSearchTerms(subject: string): string[] {
+  const normalized = subject.toLowerCase().trim();
+  if (!normalized) return [];
+
+  const terms = new Set<string>([normalized]);
+
+  for (const [key, synonyms] of Object.entries(SUBJECT_SYNONYMS)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      terms.add(key);
+      for (const synonym of synonyms) terms.add(synonym);
+    }
+  }
+
+  // Generic tea heuristic when not already expanded
+  if (normalized.includes("tea")) {
+    terms.add("tea");
+    if (normalized.includes("jasmine") || normalized.includes("green")) {
+      terms.add("green tea");
+      terms.add("camellia sinensis");
+      terms.add("l-theanine");
+    }
+  }
+
+  return [...terms];
+}
+
+/** Build a PubMed subject clause, OR-ing synonyms when helpful. */
+export function buildSubjectPubMedClause(subject: string): string {
+  const terms = getSubjectSearchTerms(subject);
+  if (terms.length === 0) return "";
+
+  const clauses = terms
+    .map((term) => quotePubMedPhrase(term))
+    .filter(Boolean);
+
+  const unique = [...new Set(clauses)];
+  if (unique.length === 1) return unique[0];
+  return `(${unique.join(" OR ")})`;
+}
+
+/**
  * Extract the primary intervention/subject from a user query.
  * e.g. "jasmine tea will improve your sleep" -> "jasmine tea"
  */
@@ -129,7 +182,7 @@ export function buildTopicPubMedQuery(query: string): string {
   const outcomes = extractOutcomeTerms(query);
 
   const parts: string[] = [];
-  if (subject) parts.push(quotePubMedPhrase(subject));
+  if (subject) parts.push(buildSubjectPubMedClause(subject));
   for (const outcome of outcomes) {
     const quoted = quotePubMedPhrase(outcome);
     if (quoted && !parts.includes(quoted)) parts.push(quoted);
@@ -137,7 +190,7 @@ export function buildTopicPubMedQuery(query: string): string {
 
   if (parts.length === 0) {
     const fallback = tokenize(query).slice(0, 3).join(" ");
-    return quotePubMedPhrase(fallback || "longevity");
+    return buildSubjectPubMedClause(fallback) || quotePubMedPhrase("longevity");
   }
 
   return parts.join(" AND ");
@@ -156,7 +209,7 @@ export function buildClaimPubMedQuery(claimText: string, originalQuery: string):
   }
 
   const parts: string[] = [];
-  if (subject) parts.push(quotePubMedPhrase(subject));
+  if (subject) parts.push(buildSubjectPubMedClause(subject));
   for (const outcome of outcomes.slice(0, 2)) {
     const quoted = quotePubMedPhrase(outcome);
     if (quoted && !parts.includes(quoted)) parts.push(quoted);
@@ -177,6 +230,7 @@ export function buildPlainLiteratureQuery(
   originalQuery: string
 ): string {
   const subject = extractPrimarySubject(originalQuery);
+  const subjectTerms = getSubjectSearchTerms(subject);
   const claimOutcomes = extractOutcomeTerms(claimText);
   const queryOutcomes = extractOutcomeTerms(originalQuery);
   const outcomes = [...claimOutcomes];
@@ -184,14 +238,15 @@ export function buildPlainLiteratureQuery(
     if (!outcomes.includes(outcome)) outcomes.push(outcome);
   }
 
-  const parts = [subject, ...outcomes.slice(0, 2)].filter(Boolean);
+  const parts = [...subjectTerms.slice(0, 3), ...outcomes.slice(0, 2)].filter(Boolean);
   return parts.join(" ").trim() || originalQuery.replace(/\?/g, "").trim();
 }
 
 export function buildPlainTopicQuery(query: string): string {
   const subject = extractPrimarySubject(query);
+  const subjectTerms = getSubjectSearchTerms(subject);
   const outcomes = extractOutcomeTerms(query);
-  const parts = [subject, ...outcomes].filter(Boolean);
+  const parts = [...subjectTerms.slice(0, 3), ...outcomes].filter(Boolean);
   return parts.join(" ").trim() || query.replace(/\?/g, "").trim();
 }
 
