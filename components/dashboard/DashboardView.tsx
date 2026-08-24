@@ -81,6 +81,117 @@ function insertFlagMarkers(
   return { text: modifiedText, flagPositions };
 }
 
+function LinkedStudiesPanel({
+  studies,
+  rctCount,
+  metaCount,
+}: {
+  studies: Study[];
+  rctCount: number;
+  metaCount: number;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  if (studies.length === 0) return null;
+
+  return (
+    <div style={{
+      marginTop: "1.5rem",
+      paddingTop: "1.5rem",
+      borderTop: "1px solid #e2e8f0",
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "1rem",
+        flexWrap: "wrap",
+        marginBottom: "0.75rem",
+      }}>
+        <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600, color: "#374151" }}>
+          Linked Studies ({studies.length})
+        </p>
+        <p style={{ margin: 0, fontSize: "0.78rem", color: "#6b7280" }}>
+          {rctCount} RCT{rctCount !== 1 ? "s" : ""} · {metaCount} Meta-analys{metaCount !== 1 ? "es" : "is"}
+        </p>
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#2563eb",
+            cursor: "pointer",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            textDecoration: "underline",
+            padding: 0,
+          }}
+        >
+          {expanded ? "Hide" : "Show"} studies
+        </button>
+      </div>
+      {expanded && (
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.75rem",
+          maxHeight: "320px",
+          overflowY: "auto",
+        }}>
+          {studies.map((study, idx) => (
+            <div
+              key={`${study.url}-${idx}`}
+              style={{
+                padding: "0.875rem 1rem",
+                background: "white",
+                borderRadius: "10px",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <a
+                href={study.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  color: "#2563eb",
+                  textDecoration: "none",
+                  display: "block",
+                  marginBottom: "0.35rem",
+                }}
+              >
+                {study.title}
+              </a>
+              <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                {study.authors.length > 0 && (
+                  <span>{study.authors.join(", ")}{study.authors.length < 3 ? " et al." : ""}</span>
+                )}
+                {study.year && (
+                  <>
+                    {study.authors.length > 0 && " · "}
+                    <span>{study.year}</span>
+                  </>
+                )}
+                {study.journal && (
+                  <>
+                    {(study.authors.length > 0 || study.year) && " · "}
+                    <span>{study.journal}</span>
+                  </>
+                )}
+                {" · "}
+                <span style={{ textTransform: "capitalize" }}>
+                  {study.source.replace("_", " ")}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClaimCardWrapper({
   claim,
   color,
@@ -1157,6 +1268,13 @@ export function DashboardView() {
                   )}
                 </div>
               </div>
+              {result.topic_study_data && result.topic_study_data.studies.length > 0 && (
+                <LinkedStudiesPanel
+                  studies={result.topic_study_data.studies}
+                  rctCount={result.topic_study_data.rct_count}
+                  metaCount={result.topic_study_data.meta_analysis_count}
+                />
+              )}
               {result.evidence_flags && result.evidence_flags.length > 0 && transparencyOn && (
                 <div style={{ marginTop: "1.5rem", paddingTop: "1.5rem", borderTop: "1px solid #e2e8f0" }}>
                   <p style={{ margin: "0 0 0.75rem 0", fontSize: "0.875rem", fontWeight: 600, color: "#374151" }}>

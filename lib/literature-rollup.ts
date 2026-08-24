@@ -1,29 +1,50 @@
-import type { ClaimStudyData, LiteratureSummary, PubMedSummary } from "@/engine/types";
+import type {
+  ClaimStudyData,
+  LiteratureSummary,
+  PubMedSummary,
+  TopicStudyData,
+} from "@/engine/types";
+
+function collectUniqueStudies(
+  ...studyGroups: Array<{ studies: { title: string }[] } | undefined>
+): Set<string> {
+  const uniqueStudies = new Set<string>();
+  for (const group of studyGroups) {
+    for (const study of group?.studies ?? []) {
+      uniqueStudies.add(study.title.toLowerCase().trim());
+    }
+  }
+  return uniqueStudies;
+}
 
 /**
- * Roll up topic-level PubMed counts with per-claim literature search results.
+ * Roll up topic-level PubMed counts with per-claim and topic literature search results.
  */
 export function rollupLiterature(
   pubmedSummary?: PubMedSummary,
-  claimStudyData?: ClaimStudyData[]
+  claimStudyData?: ClaimStudyData[],
+  topicStudyData?: TopicStudyData
 ): LiteratureSummary | undefined {
-  const topicRct = pubmedSummary?.rct_count ?? 0;
-  const topicMeta = pubmedSummary?.meta_analysis_count ?? 0;
+  const topicRct = Math.max(
+    pubmedSummary?.rct_count ?? 0,
+    topicStudyData?.rct_count ?? 0
+  );
+  const topicMeta = Math.max(
+    pubmedSummary?.meta_analysis_count ?? 0,
+    topicStudyData?.meta_analysis_count ?? 0
+  );
   const publicationVolume = pubmedSummary?.publication_volume_last_10_years ?? 0;
 
   let claimRct = 0;
   let claimMeta = 0;
-  const uniqueStudies = new Set<string>();
-
   for (const claimData of claimStudyData ?? []) {
     claimRct += claimData.rct_count;
     claimMeta += claimData.meta_analysis_count;
-    for (const study of claimData.studies) {
-      uniqueStudies.add(study.title.toLowerCase().trim());
-    }
   }
 
-  if (!pubmedSummary && !claimStudyData?.length) {
+  const uniqueStudies = collectUniqueStudies(topicStudyData, ...(claimStudyData ?? []));
+
+  if (!pubmedSummary && !claimStudyData?.length && !topicStudyData) {
     return undefined;
   }
 

@@ -122,6 +122,12 @@ export interface ClaimStudyData {
   studies: Study[];
 }
 
+export interface TopicStudyData {
+  rct_count: number;
+  meta_analysis_count: number;
+  studies: Study[];
+}
+
 export interface AnalyzeResponse {
   raw_response: string;
   guarded_response: string;
@@ -132,4 +138,5 @@ export interface AnalyzeResponse {
   literature_summary?: LiteratureSummary;
   claim_pubmed_data?: ClaimPubMedData[];
   claim_study_data?: ClaimStudyData[];
+  topic_study_data?: TopicStudyData;
 }

@@ -3,7 +3,12 @@
  * Aggregates RCT and meta-analysis counts and returns study links
  */
 
-import { buildClaimPubMedQuery, buildPlainLiteratureQuery } from "@/lib/literature-query";
+import {
+  buildClaimPubMedQuery,
+  buildPlainLiteratureQuery,
+  buildPlainTopicQuery,
+  buildTopicPubMedQuery,
+} from "@/lib/literature-query";
 
 export interface Study {
   title: string;
@@ -228,6 +233,43 @@ async function searchMetaAnalyses(
   }
 
   return unique.slice(0, 10);
+}
+
+/**
+ * Multi-source search for RCTs and meta-analyses related to a user query topic.
+ */
+export async function searchStudiesForTopic(
+  query: string
+): Promise<StudySearchResult> {
+  const pubmedTerm = buildTopicPubMedQuery(query);
+  const plainTerm = buildPlainTopicQuery(query);
+
+  const email = process.env.PUBMED_EMAIL;
+  const semanticScholarKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
+
+  const [pubmedRCTs, semanticRCTs, metaAnalyses] = await Promise.all([
+    searchPubMedWithDetails(pubmedTerm, email),
+    searchSemanticScholar(plainTerm, semanticScholarKey),
+    searchMetaAnalyses(pubmedTerm, plainTerm, email, semanticScholarKey),
+  ]);
+
+  const allRCTs = [...pubmedRCTs, ...semanticRCTs];
+  const uniqueRCTs: Study[] = [];
+  const seenTitles = new Set<string>();
+
+  for (const study of allRCTs) {
+    const normalizedTitle = study.title.toLowerCase().trim();
+    if (!seenTitles.has(normalizedTitle)) {
+      seenTitles.add(normalizedTitle);
+      uniqueRCTs.push(study);
+    }
+  }
+
+  return {
+    rct_count: uniqueRCTs.length,
+    meta_analysis_count: metaAnalyses.length,
+    studies: [...uniqueRCTs.slice(0, 15), ...metaAnalyses.slice(0, 5)],
+  };
 }
 
 /**

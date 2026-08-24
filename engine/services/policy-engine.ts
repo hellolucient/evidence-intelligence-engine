@@ -2,6 +2,7 @@
  * Policy engine: detect evidence/certainty mismatches and produce evidence flags.
  */
 
+import { useEvidenceMap } from "../config";
 import type { ExtractedClaim, EvidenceFlag, EvidenceMapEntry } from "../types";
 import {
   analyzeQueryScope,
@@ -30,7 +31,48 @@ function isSupportedTier(entry: EvidenceMapEntry): boolean {
   return entry.evidence_label === "supported" || entry.evidence_label === "established";
 }
 
-export function detectFlags(
+/**
+ * Lightweight flags based on claim wording only — no curated evidence map required.
+ */
+function detectFlagsFromClaimText(claims: ExtractedClaim[]): EvidenceFlag[] {
+  const flags: EvidenceFlag[] = [];
+
+  for (let i = 0; i < claims.length; i++) {
+    const claim = claims[i];
+
+    if (
+      claim.claim_type === "lifespan_outcome" &&
+      claim.detected_certainty_level === "strong"
+    ) {
+      flags.push({
+        type: "lifespan_certainty_mismatch",
+        claim_index: i,
+        message:
+          "Claim states lifespan outcome with strong certainty; verify human lifespan evidence independently.",
+        penalty: PENALTY.lifespan_certainty_mismatch,
+      });
+    }
+
+    if (
+      hasCausalFraming(claim.claim_text) &&
+      claim.detected_certainty_level === "strong" &&
+      (claim.claim_type === "intervention_effect" ||
+        claim.claim_type === "healthspan_outcome")
+    ) {
+      flags.push({
+        type: "unsupported_causal_framing",
+        claim_index: i,
+        message:
+          "Strong causal or benefit framing — confirm against linked literature before treating as established.",
+        penalty: PENALTY.unsupported_causal_framing,
+      });
+    }
+  }
+
+  return flags;
+}
+
+function detectFlagsWithEvidenceMap(
   claims: ExtractedClaim[],
   evidenceMap: EvidenceMapEntry[],
   query?: string
@@ -52,7 +94,6 @@ export function detectFlags(
     const mentioned = getMentionedInterventions(evidenceMap, claim.claim_text);
     const mapBackedMentioned = scope?.tangentialMatchOnly ? [] : mentioned;
 
-    // Rule: lifespan_outcome + strong certainty but no human lifespan evidence
     if (
       claim.claim_type === "lifespan_outcome" &&
       claim.detected_certainty_level === "strong"
@@ -77,7 +118,6 @@ export function detectFlags(
       }
     }
 
-    // Rule: mechanistic claim that implies lifespan extension
     if (
       claim.claim_type === "mechanistic" &&
       claim.detected_certainty_level === "strong"
@@ -100,7 +140,6 @@ export function detectFlags(
       }
     }
 
-    // Rule: intervention not in curated evidence map
     const isEffectClaim =
       claim.claim_type === "intervention_effect" ||
       claim.claim_type === "healthspan_outcome" ||
@@ -124,7 +163,6 @@ export function detectFlags(
       }
     }
 
-    // Rule: causal / benefit framing without strong evidence
     if (hasCausalFraming(claim.claim_text)) {
       const strongOrModerate =
         claim.detected_certainty_level === "strong" ||
@@ -161,7 +199,6 @@ export function detectFlags(
       }
     }
 
-    // Rule: minor certainty inflation (moderate/speculative evidence, strong wording)
     if (claim.detected_certainty_level === "strong" && mapBackedMentioned.length > 0) {
       const weakEvidence = mapBackedMentioned.some(
         (e) => e.evidence_label === "experimental" || e.evidence_label === "emerging"
@@ -182,4 +219,15 @@ export function detectFlags(
   }
 
   return flags;
+}
+
+export function detectFlags(
+  claims: ExtractedClaim[],
+  evidenceMap: EvidenceMapEntry[],
+  query?: string
+): EvidenceFlag[] {
+  if (!useEvidenceMap()) {
+    return detectFlagsFromClaimText(claims);
+  }
+  return detectFlagsWithEvidenceMap(claims, evidenceMap, query);
 }

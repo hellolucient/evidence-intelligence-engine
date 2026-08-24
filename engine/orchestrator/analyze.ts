@@ -6,6 +6,7 @@
  */
 
 import type { AnalyzeInput, AnalyzeResponse } from "../types";
+import { useEvidenceMap } from "../config";
 import { loadEvidenceMap, isQueryInScope } from "../services/evidence-map";
 import { createModelRouter } from "../llm/model-router";
 import { PROMPT_VERSION } from "../prompts/registry";
@@ -112,23 +113,23 @@ export async function analyze(
   const router = createModelRouter({ llm: options?.llm });
   const fetchPubmed = options?.fetchPubmed ?? (() => Promise.resolve(null));
 
-  // Check scope first - load evidence map and see if query relates to any interventions
-  const evidenceMap = await loadEvidenceMap();
-  const inMap = isQueryInScope(evidenceMap, input.query);
+  // Optional curated evidence map scope gate (off by default — set EIE_USE_EVIDENCE_MAP=true to enable)
+  const evidenceMap = useEvidenceMap() ? await loadEvidenceMap() : [];
+  const mapEnabled = useEvidenceMap();
 
-  if (!inMap) {
-    // Check if it's longevity-related but just not in the map
-    if (isLongevityRelated(input.query)) {
-      return {
-        raw_response: NOT_IN_MAP_MESSAGE,
-        guarded_response: NOT_IN_MAP_MESSAGE,
-        claims: [],
-        evidence_flags: [],
-        coherence_score: 100,
-        pubmed_summary: undefined,
-      };
-    } else {
-      // Truly outside scope
+  if (mapEnabled) {
+    const inMap = isQueryInScope(evidenceMap, input.query);
+    if (!inMap) {
+      if (isLongevityRelated(input.query)) {
+        return {
+          raw_response: NOT_IN_MAP_MESSAGE,
+          guarded_response: NOT_IN_MAP_MESSAGE,
+          claims: [],
+          evidence_flags: [],
+          coherence_score: 100,
+          pubmed_summary: undefined,
+        };
+      }
       return {
         raw_response: OUT_OF_SCOPE_MESSAGE,
         guarded_response: OUT_OF_SCOPE_MESSAGE,
@@ -160,13 +161,24 @@ export async function analyze(
   let pubmed_summary: AnalyzeResponse["pubmed_summary"] = undefined;
   let claim_pubmed_data: AnalyzeResponse["claim_pubmed_data"] = undefined;
   let claim_study_data: AnalyzeResponse["claim_study_data"] = undefined;
+  let topic_study_data: AnalyzeResponse["topic_study_data"] = undefined;
 
-  // Always run PubMed when requested (topic-level RCT/meta counts)
+  // Always run PubMed when requested (topic-level RCT/meta counts + study links)
   if (input.includePubmed) {
     try {
       pubmed_summary = (await fetchPubmed(input.query)) ?? undefined;
     } catch (err) {
       console.error("PubMed summary fetch failed:", err);
+    }
+
+    try {
+      const { searchStudiesForTopic } = await import("@/lib/study-search");
+      const topicStudies = await searchStudiesForTopic(input.query);
+      if (topicStudies.studies.length > 0 || topicStudies.rct_count > 0) {
+        topic_study_data = topicStudies;
+      }
+    } catch (err) {
+      console.error("Topic study search failed:", err);
     }
 
     // Fetch multi-source study data for each claim (PubMed + Semantic Scholar)
@@ -206,7 +218,11 @@ export async function analyze(
   }
 
   const { rollupLiterature } = await import("@/lib/literature-rollup");
-  const literature_summary = rollupLiterature(pubmed_summary, claim_study_data);
+  const literature_summary = rollupLiterature(
+    pubmed_summary,
+    claim_study_data,
+    topic_study_data
+  );
 
   return {
     raw_response,
@@ -218,6 +234,7 @@ export async function analyze(
     literature_summary,
     claim_pubmed_data,
     claim_study_data,
+    topic_study_data,
   };
 }
 
