@@ -21,6 +21,111 @@ function truncateMiddle(value: string, head: number, tail: number): string {
   return `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
+const ANALYSIS_STEPS = [
+  "Generating AI response…",
+  "Extracting claims…",
+  "Checking evidence flags…",
+  "Searching PubMed literature…",
+  "Scoring evidence coherence…",
+];
+
+function AnalysisProgress({ active }: { active: boolean }) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setStepIndex(0);
+      setElapsed(0);
+      return;
+    }
+
+    const stepTimer = window.setInterval(() => {
+      setStepIndex((prev) => (prev + 1) % ANALYSIS_STEPS.length);
+    }, 3200);
+    const elapsedTimer = window.setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(stepTimer);
+      window.clearInterval(elapsedTimer);
+    };
+  }, [active]);
+
+  if (!active) return null;
+
+  const progress = ((stepIndex + 1) / ANALYSIS_STEPS.length) * 100;
+
+  return (
+    <div
+      style={{
+        marginTop: "1rem",
+        padding: "1rem 1.25rem",
+        borderRadius: "12px",
+        background: "linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%)",
+        border: "1px solid #c7d2fe",
+        animation: "eie-pulse 2.4s ease-in-out infinite",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
+        <span
+          style={{
+            width: "18px",
+            height: "18px",
+            border: "2px solid #93c5fd",
+            borderTopColor: "#3b82f6",
+            borderRadius: "50%",
+            display: "inline-block",
+            animation: "eie-spin 0.8s linear infinite",
+            flexShrink: 0,
+          }}
+        />
+        <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600, color: "#1e40af" }}>
+          {ANALYSIS_STEPS[stepIndex]}
+        </p>
+        <span style={{ marginLeft: "auto", fontSize: "0.8rem", color: "#6b7280", fontVariantNumeric: "tabular-nums" }}>
+          {elapsed}s
+        </span>
+      </div>
+      <div
+        style={{
+          height: "6px",
+          borderRadius: "999px",
+          background: "#dbeafe",
+          overflow: "hidden",
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: "0 auto 0 0",
+            width: `${progress}%`,
+            background: "linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)",
+            borderRadius: "999px",
+            transition: "width 0.6s ease",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "30%",
+            height: "100%",
+            background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent)",
+            animation: "eie-progress-slide 1.4s ease-in-out infinite",
+          }}
+        />
+      </div>
+      <p style={{ margin: "0.5rem 0 0", fontSize: "0.78rem", color: "#6b7280" }}>
+        This usually takes 15–45 seconds depending on claim complexity and literature search.
+      </p>
+    </div>
+  );
+}
+
 /**
  * Insert flag markers into raw output text where flagged claims appear
  */
@@ -689,7 +794,7 @@ export function DashboardView() {
     (descriptionModalType === "menu" && !!menuDescriptions?.length) ||
     (descriptionModalType === "product" && !!productDescriptions?.length);
 
-  const rewriteReady = !!result?.guarded_response;
+  const descriptionsReady = !!result?.guarded_response;
 
   useEffect(() => {
     if (!descriptionModalOpen) return;
@@ -777,7 +882,9 @@ export function DashboardView() {
             style={{
               marginTop: "1rem",
               padding: "0.875rem 2rem",
-              background: loading ? "#9ca3af" : "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
+              background: loading
+                ? "linear-gradient(135deg, #6366f1 0%, #7c3aed 100%)"
+                : "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
               color: "white",
               border: "none",
               borderRadius: "12px",
@@ -785,7 +892,11 @@ export function DashboardView() {
               fontSize: "1rem",
               cursor: loading || !query.trim() ? "not-allowed" : "pointer",
               transition: "all 0.2s",
-              boxShadow: loading ? "none" : "0 4px 15px rgba(59, 130, 246, 0.4)",
+              boxShadow: loading ? "0 4px 15px rgba(99, 102, 241, 0.35)" : "0 4px 15px rgba(59, 130, 246, 0.4)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.6rem",
+              animation: loading ? "eie-pulse 1.8s ease-in-out infinite" : undefined,
             }}
             onMouseEnter={(e) => {
               if (!loading && query.trim()) {
@@ -800,56 +911,71 @@ export function DashboardView() {
               }
             }}
           >
+            {loading && (
+              <span
+                style={{
+                  width: "16px",
+                  height: "16px",
+                  border: "2px solid rgba(255,255,255,0.35)",
+                  borderTopColor: "white",
+                  borderRadius: "50%",
+                  display: "inline-block",
+                  animation: "eie-spin 0.8s linear infinite",
+                }}
+              />
+            )}
             {loading ? "Analyzing…" : "Analyze"}
           </button>
+
+          <AnalysisProgress active={loading} />
 
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
             <button
               type="button"
               onClick={generateMenuDescriptions}
-              disabled={menuLoading || productLoading || loading || !rewriteReady}
+              disabled={menuLoading || productLoading || loading || !descriptionsReady}
               style={{
                 padding: "0.75rem 1.5rem",
-                background: rewriteReady && !menuLoading
+                background: descriptionsReady && !menuLoading
                   ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
                   : "#e5e7eb",
-                color: rewriteReady && !menuLoading ? "white" : "#9ca3af",
+                color: descriptionsReady && !menuLoading ? "white" : "#9ca3af",
                 border: "none",
                 borderRadius: "12px",
                 fontWeight: 600,
                 fontSize: "0.95rem",
-                cursor: rewriteReady && !menuLoading ? "pointer" : "not-allowed",
+                cursor: descriptionsReady && !menuLoading ? "pointer" : "not-allowed",
                 transition: "all 0.2s",
-                boxShadow: rewriteReady && !menuLoading ? "0 4px 15px rgba(16, 185, 129, 0.4)" : "none",
+                boxShadow: descriptionsReady && !menuLoading ? "0 4px 15px rgba(16, 185, 129, 0.4)" : "none",
               }}
             >
-              {menuLoading ? "Generating…" : "Menu Rewrite"}
+              {menuLoading ? "Generating…" : "Menu Description"}
             </button>
             <button
               type="button"
               onClick={generateProductDescriptions}
-              disabled={menuLoading || productLoading || loading || !rewriteReady}
+              disabled={menuLoading || productLoading || loading || !descriptionsReady}
               style={{
                 padding: "0.75rem 1.5rem",
-                background: rewriteReady && !productLoading
+                background: descriptionsReady && !productLoading
                   ? "linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)"
                   : "#e5e7eb",
-                color: rewriteReady && !productLoading ? "white" : "#9ca3af",
+                color: descriptionsReady && !productLoading ? "white" : "#9ca3af",
                 border: "none",
                 borderRadius: "12px",
                 fontWeight: 600,
                 fontSize: "0.95rem",
-                cursor: rewriteReady && !productLoading ? "pointer" : "not-allowed",
+                cursor: descriptionsReady && !productLoading ? "pointer" : "not-allowed",
                 transition: "all 0.2s",
-                boxShadow: rewriteReady && !productLoading ? "0 4px 15px rgba(14, 165, 233, 0.4)" : "none",
+                boxShadow: descriptionsReady && !productLoading ? "0 4px 15px rgba(14, 165, 233, 0.4)" : "none",
               }}
             >
-              {productLoading ? "Generating…" : "Product Rewrite"}
+              {productLoading ? "Generating…" : "Product Description"}
             </button>
           </div>
-          {!rewriteReady && (
+          {!descriptionsReady && (
             <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#9ca3af" }}>
-              Run an analysis first to unlock rewrites.
+              Run an analysis first to unlock descriptions.
             </p>
           )}
 
@@ -1151,7 +1277,7 @@ export function DashboardView() {
                     WebkitTextFillColor: "transparent",
                     backgroundClip: "text"
                   }}>
-                    {isProduct ? "Product Rewrites" : "Menu Rewrites"}
+                    {isProduct ? "Product Descriptions" : "Spa Menu Descriptions"}
                   </h2>
                   <p style={{ margin: 0, fontSize: "0.95rem", color: "#6b7280" }}>
                     Based on: <strong style={{ color: "#374151" }}>{query}</strong>
