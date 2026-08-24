@@ -2,9 +2,8 @@
  * Evidence matcher + evidence source loader (JSON seed for now).
  */
 
+import seedEvidenceMap from "@/data/evidence_map.json";
 import type { EvidenceMapEntry } from "../types";
-
-const EVIDENCE_MAP_PATH = "data/evidence_map.json";
 
 let cachedMap: EvidenceMapEntry[] | null = null;
 
@@ -14,42 +13,18 @@ function normalize(name: string): string {
 }
 
 /**
- * Load evidence map from JSON. Uses filesystem read in server contexts.
+ * Load evidence map from bundled JSON seed.
+ * Imported at build time so serverless deployments include the dataset.
  */
-export async function loadEvidenceMap(
-  mapPath: string = EVIDENCE_MAP_PATH
-): Promise<EvidenceMapEntry[]> {
+export async function loadEvidenceMap(): Promise<EvidenceMapEntry[]> {
   if (cachedMap) return cachedMap;
-  try {
-    const fs = await import("fs");
-    const path = await import("path");
-    const fullPath = path.join(process.cwd(), mapPath);
 
-    // readFileSync will throw if file doesn't exist, so we catch and provide clearer error
-    let raw: string;
-    try {
-      raw = fs.readFileSync(fullPath, "utf-8");
-    } catch (readErr) {
-      if ((readErr as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new Error(`Evidence map file not found at: ${fullPath}`);
-      }
-      throw readErr;
-    }
-
-    const parsed = JSON.parse(raw) as EvidenceMapEntry[];
-
-    if (!Array.isArray(parsed)) {
-      throw new Error("Evidence map must be a JSON array");
-    }
-
-    cachedMap = parsed;
-    return parsed;
-  } catch (err) {
-    if (err instanceof Error) {
-      throw new Error(`Failed to load evidence map: ${err.message}`);
-    }
-    throw err;
+  if (!Array.isArray(seedEvidenceMap)) {
+    throw new Error("Failed to load evidence map: seed data must be a JSON array");
   }
+
+  cachedMap = seedEvidenceMap as EvidenceMapEntry[];
+  return cachedMap;
 }
 
 /**
