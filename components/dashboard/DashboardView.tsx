@@ -258,15 +258,17 @@ function ClaimCard({
       }}>
         {claim.claim_type} · {claim.detected_certainty_level}
       </div>
-      <div style={{ fontSize: "0.875rem", lineHeight: 1.6, color: "#374151", marginBottom: studyData ? "0.75rem" : 0 }}>
+      <div style={{ fontSize: "0.875rem", lineHeight: 1.6, color: "#374151", marginBottom: studyData !== undefined ? "0.75rem" : 0 }}>
         {claim.claim_text}
       </div>
-      {studyData && (studyData.rct_count > 0 || studyData.meta_analysis_count > 0 || studyData.studies.length > 0) && (
+      {studyData !== undefined && (
         <div style={{
           marginTop: "0.75rem",
           paddingTop: "0.75rem",
           borderTop: "1px solid rgba(0,0,0,0.1)"
         }}>
+          {studyData.studies.length > 0 || studyData.rct_count > 0 || studyData.meta_analysis_count > 0 ? (
+            <>
           <div style={{
             fontSize: "0.75rem",
             color: "#6b7280",
@@ -370,6 +372,12 @@ function ClaimCard({
                 </div>
               ))}
             </div>
+          )}
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: "0.75rem", color: "#9ca3af", fontStyle: "italic" }}>
+              No linked studies found for this specific claim.
+            </p>
           )}
         </div>
       )}

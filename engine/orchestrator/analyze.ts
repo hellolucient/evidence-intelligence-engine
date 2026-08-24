@@ -191,28 +191,26 @@ export async function analyze(
             input.query
           );
 
-          // Only include if we found studies
-          if (studyData.studies.length > 0 || studyData.rct_count > 0) {
-            return {
-              claim_index: index,
-              rct_count: studyData.rct_count,
-              meta_analysis_count: studyData.meta_analysis_count,
-              studies: studyData.studies,
-            };
-          }
+          return {
+            claim_index: index,
+            rct_count: studyData.rct_count,
+            meta_analysis_count: studyData.meta_analysis_count,
+            studies: studyData.studies,
+          };
         } catch (err) {
           console.error(`Failed to fetch study data for claim ${index}:`, err);
+          return {
+            claim_index: index,
+            rct_count: 0,
+            meta_analysis_count: 0,
+            studies: [],
+          };
         }
-        return null;
       });
 
       const claimStudyResults = await Promise.all(claimStudyPromises);
-      const validStudyResults = claimStudyResults.filter(
-        (d): d is NonNullable<typeof d> => d !== null
-      );
-
-      if (validStudyResults.length > 0) {
-        claim_study_data = validStudyResults;
+      if (claimStudyResults.length > 0) {
+        claim_study_data = claimStudyResults;
       }
     }
   }

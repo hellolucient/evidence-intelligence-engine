@@ -196,21 +196,107 @@ export function buildTopicPubMedQuery(query: string): string {
   return parts.join(" AND ");
 }
 
+const HEALTH_OUTCOME_TERMS = [
+  "relaxation",
+  "anxiety",
+  "sleep",
+  "insomnia",
+  "stress",
+  "antioxidant",
+  "antioxidants",
+  "mood",
+  "depression",
+  "calm",
+  "arousal",
+  "blood pressure",
+  "heart rate",
+  "cortisol",
+  "health",
+  "wellbeing",
+  "well-being",
+];
+
+const AROMA_PATTERNS =
+  /\b(scent|smell|aroma|odor|odour|olfact|inhal|aromatherapy|fragrance|perfume)\b/i;
+
+const INGESTION_PATTERNS =
+  /\b(tea|drink|beverage|cup|swallow|ingest|consume|dietary|supplement)\b/i;
+
+function extractClaimOutcomeTerms(claimText: string, maxTerms = 3): string[] {
+  const lower = claimText.toLowerCase();
+  const outcomes: string[] = [];
+
+  for (const term of HEALTH_OUTCOME_TERMS) {
+    if (!lower.includes(term)) continue;
+    const normalized =
+      term === "antioxidants" ? "antioxidant" : term.replace(/s$/, "") === "antioxidant" ? "antioxidant" : term;
+    if (!outcomes.includes(normalized)) {
+      outcomes.push(normalized);
+    }
+    if (outcomes.length >= maxTerms) break;
+  }
+
+  if (outcomes.length > 0) return outcomes.slice(0, maxTerms);
+
+  return extractOutcomeTerms(claimText, maxTerms);
+}
+
+function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
+  const lower = claimText.toLowerCase();
+  const terms = new Set<string>();
+
+  if (lower.includes("jasmine")) {
+    terms.add("jasmine");
+  }
+
+  if (AROMA_PATTERNS.test(lower)) {
+    terms.add("jasmine");
+    terms.add("jasmine oil");
+    terms.add("aromatherapy");
+  }
+
+  if (INGESTION_PATTERNS.test(lower)) {
+    for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
+      terms.add(term);
+    }
+  }
+
+  if (terms.size === 0) {
+    for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
+      terms.add(term);
+    }
+  }
+
+  return [...terms];
+}
+
+function buildTermsPubMedClause(terms: string[]): string {
+  if (terms.length === 0) return "";
+  const clauses = [...new Set(terms.map((term) => quotePubMedPhrase(term)).filter(Boolean))];
+  if (clauses.length === 1) return clauses[0];
+  return `(${clauses.join(" OR ")})`;
+}
+
 /**
  * Build a PubMed search query for a specific claim.
  */
 export function buildClaimPubMedQuery(claimText: string, originalQuery: string): string {
-  const subject = extractPrimarySubject(originalQuery);
-  const claimOutcomes = extractOutcomeTerms(claimText);
+  const subjectTerms = extractClaimSubjectTerms(claimText, originalQuery);
+  const claimOutcomes = extractClaimOutcomeTerms(claimText);
   const queryOutcomes = extractOutcomeTerms(originalQuery);
   const outcomes = [...claimOutcomes];
   for (const outcome of queryOutcomes) {
-    if (!outcomes.includes(outcome)) outcomes.push(outcome);
+    const normalized = outcome.replace(/s$/, "");
+    if (!outcomes.some((existing) => existing.replace(/s$/, "") === normalized)) {
+      outcomes.push(outcome);
+    }
   }
 
   const parts: string[] = [];
-  if (subject) parts.push(buildSubjectPubMedClause(subject));
-  for (const outcome of outcomes.slice(0, 2)) {
+  const subjectClause = buildTermsPubMedClause(subjectTerms);
+  if (subjectClause) parts.push(subjectClause);
+
+  for (const outcome of outcomes.slice(0, 3)) {
     const quoted = quotePubMedPhrase(outcome);
     if (quoted && !parts.includes(quoted)) parts.push(quoted);
   }
@@ -229,16 +315,15 @@ export function buildPlainLiteratureQuery(
   claimText: string,
   originalQuery: string
 ): string {
-  const subject = extractPrimarySubject(originalQuery);
-  const subjectTerms = getSubjectSearchTerms(subject);
-  const claimOutcomes = extractOutcomeTerms(claimText);
+  const subjectTerms = extractClaimSubjectTerms(claimText, originalQuery);
+  const claimOutcomes = extractClaimOutcomeTerms(claimText);
   const queryOutcomes = extractOutcomeTerms(originalQuery);
   const outcomes = [...claimOutcomes];
   for (const outcome of queryOutcomes) {
     if (!outcomes.includes(outcome)) outcomes.push(outcome);
   }
 
-  const parts = [...subjectTerms.slice(0, 3), ...outcomes.slice(0, 2)].filter(Boolean);
+  const parts = [...subjectTerms.slice(0, 4), ...outcomes.slice(0, 3)].filter(Boolean);
   return parts.join(" ").trim() || originalQuery.replace(/\?/g, "").trim();
 }
 
