@@ -422,6 +422,7 @@ export function DashboardView() {
     created_at: string | null;
   } | null>(null);
   const [analysisIdWasManuallyEdited, setAnalysisIdWasManuallyEdited] = useState(false);
+  const [showAnimocaTools, setShowAnimocaTools] = useState(false);
 
   // Process raw output with flag markers
   const rawOutputWithFlags = useMemo(() => {
@@ -688,6 +689,8 @@ export function DashboardView() {
     (descriptionModalType === "menu" && !!menuDescriptions?.length) ||
     (descriptionModalType === "product" && !!productDescriptions?.length);
 
+  const rewriteReady = !!result?.guarded_response;
+
   useEffect(() => {
     if (!descriptionModalOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -740,134 +743,116 @@ export function DashboardView() {
           <label style={{ display: "block", marginBottom: "0.75rem", fontWeight: 600, fontSize: "0.875rem", color: "#374151" }}>
             Your Question
           </label>
-          <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-            <textarea
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. Should I do a 5-day water fast to extend lifespan?"
-              rows={6}
+          <textarea
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="e.g. Should I do a 5-day water fast to extend lifespan?"
+            rows={6}
+            style={{
+              width: "100%",
+              minHeight: "9rem",
+              padding: "1rem",
+              borderRadius: "12px",
+              border: "2px solid #e5e7eb",
+              fontSize: "1rem",
+              boxSizing: "border-box",
+              transition: "all 0.2s",
+              fontFamily: "inherit",
+              resize: "vertical",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "#667eea";
+              e.target.style.boxShadow = "0 0 0 3px rgba(102, 126, 234, 0.1)";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#e5e7eb";
+              e.target.style.boxShadow = "none";
+            }}
+            disabled={loading || menuLoading || productLoading}
+          />
+
+          <button
+            type="submit"
+            disabled={loading || menuLoading || productLoading || !query.trim()}
+            style={{
+              marginTop: "1rem",
+              padding: "0.875rem 2rem",
+              background: loading ? "#9ca3af" : "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
+              color: "white",
+              border: "none",
+              borderRadius: "12px",
+              fontWeight: 700,
+              fontSize: "1rem",
+              cursor: loading || !query.trim() ? "not-allowed" : "pointer",
+              transition: "all 0.2s",
+              boxShadow: loading ? "none" : "0 4px 15px rgba(59, 130, 246, 0.4)",
+            }}
+            onMouseEnter={(e) => {
+              if (!loading && query.trim()) {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.5)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!loading) {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.4)";
+              }
+            }}
+          >
+            {loading ? "Analyzing…" : "Analyze"}
+          </button>
+
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
+            <button
+              type="button"
+              onClick={generateMenuDescriptions}
+              disabled={menuLoading || productLoading || loading || !rewriteReady}
               style={{
-                flex: "1 1 50%",
-                minWidth: "300px",
-                minHeight: "9rem",
-                padding: "1rem",
+                padding: "0.75rem 1.5rem",
+                background: rewriteReady && !menuLoading
+                  ? "linear-gradient(135deg, #10b981 0%, #059669 100%)"
+                  : "#e5e7eb",
+                color: rewriteReady && !menuLoading ? "white" : "#9ca3af",
+                border: "none",
                 borderRadius: "12px",
-                border: "2px solid #e5e7eb",
-                fontSize: "1rem",
-                boxSizing: "border-box",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+                cursor: rewriteReady && !menuLoading ? "pointer" : "not-allowed",
                 transition: "all 0.2s",
-                fontFamily: "inherit",
-                resize: "vertical"
+                boxShadow: rewriteReady && !menuLoading ? "0 4px 15px rgba(16, 185, 129, 0.4)" : "none",
               }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "#667eea";
-                e.target.style.boxShadow = "0 0 0 3px rgba(102, 126, 234, 0.1)";
+            >
+              {menuLoading ? "Generating…" : "Menu Rewrite"}
+            </button>
+            <button
+              type="button"
+              onClick={generateProductDescriptions}
+              disabled={menuLoading || productLoading || loading || !rewriteReady}
+              style={{
+                padding: "0.75rem 1.5rem",
+                background: rewriteReady && !productLoading
+                  ? "linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)"
+                  : "#e5e7eb",
+                color: rewriteReady && !productLoading ? "white" : "#9ca3af",
+                border: "none",
+                borderRadius: "12px",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+                cursor: rewriteReady && !productLoading ? "pointer" : "not-allowed",
+                transition: "all 0.2s",
+                boxShadow: rewriteReady && !productLoading ? "0 4px 15px rgba(14, 165, 233, 0.4)" : "none",
               }}
-              onBlur={(e) => {
-                e.target.style.borderColor = "#e5e7eb";
-                e.target.style.boxShadow = "none";
-              }}
-              disabled={loading || menuLoading || productLoading}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", flexShrink: 0 }}>
-              <button
-                type="button"
-                onClick={generateMenuDescriptions}
-                disabled={menuLoading || productLoading || loading || !query.trim() || !result?.guarded_response}
-                style={{
-                  padding: "0.75rem 1.5rem",
-                  background: menuLoading ? "#9ca3af" : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "12px",
-                  fontWeight: 600,
-                  fontSize: "0.95rem",
-                  cursor: menuLoading || !query.trim() ? "not-allowed" : "pointer",
-                  transition: "all 0.2s",
-                  boxShadow: menuLoading ? "none" : "0 4px 15px rgba(16, 185, 129, 0.4)",
-                  whiteSpace: "nowrap"
-                }}
-                onMouseEnter={(e) => {
-                  if (!menuLoading && query.trim()) {
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                    e.currentTarget.style.boxShadow = "0 6px 20px rgba(16, 185, 129, 0.5)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!menuLoading) {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = "0 4px 15px rgba(16, 185, 129, 0.4)";
-                  }
-                }}
-              >
-                {menuLoading ? "Generating…" : "Menu Description"}
-              </button>
-              <button
-                type="button"
-                onClick={generateProductDescriptions}
-                disabled={menuLoading || productLoading || loading || !query.trim() || !result?.guarded_response}
-                style={{
-                  padding: "0.75rem 1.5rem",
-                  background: productLoading ? "#9ca3af" : "linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "12px",
-                  fontWeight: 600,
-                  fontSize: "0.95rem",
-                  cursor: productLoading || !query.trim() ? "not-allowed" : "pointer",
-                  transition: "all 0.2s",
-                  boxShadow: productLoading ? "none" : "0 4px 15px rgba(14, 165, 233, 0.4)",
-                  whiteSpace: "nowrap"
-                }}
-                onMouseEnter={(e) => {
-                  if (!productLoading && query.trim()) {
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                    e.currentTarget.style.boxShadow = "0 6px 20px rgba(14, 165, 233, 0.5)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!productLoading) {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = "0 4px 15px rgba(14, 165, 233, 0.4)";
-                  }
-                }}
-              >
-                {productLoading ? "Generating…" : "Product Description"}
-              </button>
-              <button
-                type="submit"
-                disabled={loading || menuLoading || productLoading || !query.trim()}
-                style={{
-                  padding: "0.75rem 1.5rem",
-                  background: loading ? "#9ca3af" : "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "12px",
-                  fontWeight: 600,
-                  fontSize: "0.95rem",
-                  cursor: loading || !query.trim() ? "not-allowed" : "pointer",
-                  transition: "all 0.2s",
-                  boxShadow: loading ? "none" : "0 4px 15px rgba(59, 130, 246, 0.4)",
-                  whiteSpace: "nowrap"
-                }}
-                onMouseEnter={(e) => {
-                  if (!loading && query.trim()) {
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                    e.currentTarget.style.boxShadow = "0 6px 20px rgba(59, 130, 246, 0.5)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading) {
-                    e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow = "0 4px 15px rgba(59, 130, 246, 0.4)";
-                  }
-                }}
-              >
-                {loading ? "Analyzing…" : "Analyze"}
-              </button>
-            </div>
+            >
+              {productLoading ? "Generating…" : "Product Rewrite"}
+            </button>
           </div>
-          
+          {!rewriteReady && (
+            <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#9ca3af" }}>
+              Run an analysis first to unlock rewrites.
+            </p>
+          )}
+
           <div style={{ display: "flex", alignItems: "center", gap: "1.5rem", flexWrap: "wrap", marginTop: "1.5rem" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", color: "#374151" }}>
               <input
@@ -881,10 +866,29 @@ export function DashboardView() {
           </div>
         </form>
 
-        {/* Operator: Animoca email workflow (persisted analysis) */}
+        {/* Operator: Animoca email workflow (persisted analysis) — hidden by default */}
         <div style={{ marginTop: "1.25rem" }}>
+          <button
+            type="button"
+            onClick={() => setShowAnimocaTools((prev) => !prev)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#6b7280",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              padding: 0,
+              textDecoration: "underline",
+            }}
+          >
+            {showAnimocaTools ? "Hide Animoca tools" : "Show Animoca tools"}
+          </button>
+
+          {showAnimocaTools && (
           <div
             style={{
+              marginTop: "0.75rem",
               padding: "1.25rem",
               borderRadius: "16px",
               border: "1px solid #e5e7eb",
@@ -1033,6 +1037,7 @@ export function DashboardView() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {error && (
@@ -1146,7 +1151,7 @@ export function DashboardView() {
                     WebkitTextFillColor: "transparent",
                     backgroundClip: "text"
                   }}>
-                    {isProduct ? "Product Descriptions" : "Spa Menu Descriptions"}
+                    {isProduct ? "Product Rewrites" : "Menu Rewrites"}
                   </h2>
                   <p style={{ margin: 0, fontSize: "0.95rem", color: "#6b7280" }}>
                     Based on: <strong style={{ color: "#374151" }}>{query}</strong>
