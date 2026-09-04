@@ -10,6 +10,7 @@ import {
   buildTopicPubMedQuery,
   getClaimLiteratureKeywords,
 } from "@/lib/literature-query";
+import { ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
 
 export interface Study {
   title: string;
@@ -103,87 +104,36 @@ async function searchSemanticScholar(
   }
 }
 
-type PubMedESearchResponse = {
-  esearchresult?: {
-    idlist?: string[];
-  };
-};
+type PubMedPublicationFilter = "rct" | "meta-analysis";
 
-type PubMedAuthor = {
-  name?: string;
-};
-
-type PubMedESummaryPaper = {
-  uid?: string;
-  title?: string;
-  authors?: PubMedAuthor[];
-  pubdate?: string;
-  source?: string;
-};
-
-type PubMedESummaryResult = Record<string, PubMedESummaryPaper | unknown> & {
-  uids?: string[];
-};
-
-type PubMedESummaryResponse = {
-  result?: PubMedESummaryResult;
-};
+function pubmedPublicationTerm(
+  query: string,
+  publication: PubMedPublicationFilter
+): string {
+  const filter =
+    publication === "rct"
+      ? "randomized controlled trial[pt]"
+      : "meta-analysis[pt]";
+  return `(${query}) AND ${filter}`;
+}
 
 /**
- * Search PubMed and get study details (with links)
+ * Search PubMed and get study details (with links).
+ * `publication` is applied once here — callers must not also append [pt] filters.
  */
 async function searchPubMedWithDetails(
   query: string,
-  email?: string
+  publication: PubMedPublicationFilter
 ): Promise<Study[]> {
   try {
-    const BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
-    
-    // First, search for paper IDs
-    const searchParams = new URLSearchParams({
-      db: "pubmed",
-      term: `(${query}) AND randomized controlled trial[pt]`,
-      retmode: "json",
-      retmax: "20",
-    });
-    if (email) searchParams.set("email", email);
-
-    const searchRes = await fetch(`${BASE}/esearch.fcgi?${searchParams.toString()}`, {
-      next: { revalidate: 3600 },
-    });
-
-    if (!searchRes.ok) return [];
-
-    const searchData = (await searchRes.json()) as PubMedESearchResponse;
-    const ids = searchData.esearchresult?.idlist || [];
-    
+    const term = pubmedPublicationTerm(query, publication);
+    const { ids } = await ncbiEsearch(term, 20);
     if (ids.length === 0) return [];
 
-    // Fetch details for these papers
-    const fetchParams = new URLSearchParams({
-      db: "pubmed",
-      id: ids.join(','),
-      retmode: "json",
-      rettype: "abstract",
-    });
-    if (email) fetchParams.set("email", email);
-
-    const fetchRes = await fetch(`${BASE}/esummary.fcgi?${fetchParams.toString()}`, {
-      next: { revalidate: 3600 },
-    });
-
-    if (!fetchRes.ok) return [];
-
-    const fetchData = (await fetchRes.json()) as PubMedESummaryResponse;
-    const results = fetchData.result;
-    if (!results) return [];
-
-    const uids = Array.isArray(results.uids) ? results.uids : [];
-
+    const papers = await ncbiEsummary(ids);
     const out: Study[] = [];
-    for (const uid of uids) {
-      const paper = results[uid] as PubMedESummaryPaper | undefined;
-      if (!paper || typeof paper.title !== "string" || typeof paper.uid !== "string") {
+    for (const paper of papers) {
+      if (typeof paper.title !== "string" || typeof paper.uid !== "string") {
         continue;
       }
       out.push({
@@ -192,7 +142,9 @@ async function searchPubMedWithDetails(
           .slice(0, 3)
           .map((a) => a.name || "")
           .filter((n) => n.length > 0),
-        year: paper.pubdate ? parseInt(paper.pubdate.split(" ")[0] ?? "", 10) || undefined : undefined,
+        year: paper.pubdate
+          ? parseInt(paper.pubdate.split(" ")[0] ?? "", 10) || undefined
+          : undefined,
         journal: paper.source,
         url: `https://pubmed.ncbi.nlm.nih.gov/${paper.uid}/`,
         source: "pubmed" as const,
@@ -201,7 +153,8 @@ async function searchPubMedWithDetails(
     }
 
     return out;
-  } catch {
+  } catch (err) {
+    console.error("[EIE] PubMed study search failed:", err);
     return [];
   }
 }
@@ -212,11 +165,10 @@ async function searchPubMedWithDetails(
 async function searchMetaAnalyses(
   pubmedQuery: string,
   plainQuery: string,
-  email?: string,
   semanticScholarKey?: string
 ): Promise<Study[]> {
   const [pubmedStudies, semanticStudies] = await Promise.all([
-    searchPubMedWithDetails(`(${pubmedQuery}) AND meta-analysis[pt]`, email),
+    searchPubMedWithDetails(pubmedQuery, "meta-analysis"),
     searchSemanticScholar(`${plainQuery} meta-analysis`, semanticScholarKey),
   ]);
 
@@ -249,7 +201,9 @@ function filterStudiesForClaim(
     return keywords.some((keyword) => haystack.includes(keyword));
   });
 
-  return matched.slice(0, 10);
+  if (matched.length > 0) return matched.slice(0, 10);
+  // Title keyword filter can be too strict (e.g. synonym papers). Keep a small related set.
+  return studies.slice(0, 5);
 }
 
 /**
@@ -261,13 +215,14 @@ export async function searchStudiesForTopic(
   const pubmedTerm = buildTopicPubMedQuery(query);
   const plainTerm = buildPlainTopicQuery(query);
 
-  const email = process.env.PUBMED_EMAIL;
   const semanticScholarKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
 
+  console.info(`[EIE] pubmed topic study search="${pubmedTerm}"`);
+
   const [pubmedRCTs, semanticRCTs, metaAnalyses] = await Promise.all([
-    searchPubMedWithDetails(pubmedTerm, email),
+    searchPubMedWithDetails(pubmedTerm, "rct"),
     searchSemanticScholar(plainTerm, semanticScholarKey),
-    searchMetaAnalyses(pubmedTerm, plainTerm, email, semanticScholarKey),
+    searchMetaAnalyses(pubmedTerm, plainTerm, semanticScholarKey),
   ]);
 
   const allRCTs = [...pubmedRCTs, ...semanticRCTs];
@@ -299,14 +254,17 @@ export async function searchStudiesForClaim(
   const pubmedTerm = buildClaimPubMedQuery(claimText, originalQuery);
   const plainTerm = buildPlainLiteratureQuery(claimText, originalQuery);
 
-  const email = process.env.PUBMED_EMAIL;
   const semanticScholarKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
 
-  // Search both sources in parallel
+  console.info(
+    `[EIE] pubmed claim search="${pubmedTerm}" claim="${claimText.slice(0, 120)}"`
+  );
+
+  // Search both sources in parallel (NCBI calls are serialized inside ncbi-eutils)
   const [pubmedRCTs, semanticRCTs, metaAnalyses] = await Promise.all([
-    searchPubMedWithDetails(pubmedTerm, email),
+    searchPubMedWithDetails(pubmedTerm, "rct"),
     searchSemanticScholar(plainTerm, semanticScholarKey),
-    searchMetaAnalyses(pubmedTerm, plainTerm, email, semanticScholarKey),
+    searchMetaAnalyses(pubmedTerm, plainTerm, semanticScholarKey),
   ]);
 
   // Combine RCTs from both sources and deduplicate

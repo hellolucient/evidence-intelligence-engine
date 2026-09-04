@@ -14,6 +14,12 @@ const QUERY_NOISE_WORDS = new Set([
   "your", "their", "they", "them", "this", "that", "these", "those",
 ]);
 
+/** Grammar words that must not become the PubMed subject and must not cut a phrase short. */
+const SUBJECT_FILLER_WORDS = new Set([
+  "the", "a", "an", "of", "for", "on", "in", "to", "with", "and", "or",
+  "vs", "versus", "about", "by", "as",
+]);
+
 const OUTCOME_VERBS = new Set([
   "improve", "improves", "improved", "improving",
   "increase", "increases", "increased", "increasing",
@@ -138,7 +144,11 @@ export function extractPrimarySubject(query: string): string {
     const token = normalizeToken(word);
     if (!token) continue;
 
-    if (OUTCOME_VERBS.has(token)) break;
+    if (OUTCOME_VERBS.has(token)) {
+      if (meaningful.length > 0) break;
+      continue;
+    }
+    if (SUBJECT_FILLER_WORDS.has(token)) continue;
 
     if (QUERY_NOISE_WORDS.has(token)) {
       if (meaningful.length > 0) break;
@@ -150,6 +160,13 @@ export function extractPrimarySubject(query: string): string {
   }
 
   return meaningful.join(" ").trim();
+}
+
+function joinOrClauses(clauses: string[]): string {
+  const unique = [...new Set(clauses.filter(Boolean))];
+  if (unique.length === 0) return "";
+  if (unique.length === 1) return unique[0];
+  return `(${unique.join(" OR ")})`;
 }
 
 /**
@@ -181,12 +198,9 @@ export function buildTopicPubMedQuery(query: string): string {
   const subject = extractPrimarySubject(query);
   const outcomes = extractOutcomeTerms(query);
 
-  const parts: string[] = [];
-  if (subject) parts.push(buildSubjectPubMedClause(subject));
-  for (const outcome of outcomes) {
-    const quoted = quotePubMedPhrase(outcome);
-    if (quoted && !parts.includes(quoted)) parts.push(quoted);
-  }
+  const subjectClause = subject ? buildSubjectPubMedClause(subject) : "";
+  const outcomeClause = joinOrClauses(outcomes.map((outcome) => quotePubMedPhrase(outcome)));
+  const parts = [subjectClause, outcomeClause].filter(Boolean);
 
   if (parts.length === 0) {
     const fallback = tokenize(query).slice(0, 3).join(" ");
@@ -263,14 +277,19 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
     }
   }
 
-  if (lower.includes("jasmine")) {
+  if (lower.includes("jasmine") || originalQuery.toLowerCase().includes("jasmine")) {
     terms.add("jasmine");
   }
 
   if (AROMA_PATTERNS.test(lower)) {
-    terms.add("jasmine");
-    terms.add("jasmine oil");
     terms.add("aromatherapy");
+    if (lower.includes("jasmine") || originalQuery.toLowerCase().includes("jasmine")) {
+      terms.add("jasmine");
+      terms.add("jasmine oil");
+    } else {
+      const primary = extractPrimarySubject(originalQuery);
+      if (primary) terms.add(primary);
+    }
   }
 
   if (INGESTION_PATTERNS.test(lower)) {
@@ -327,14 +346,11 @@ export function buildClaimPubMedQuery(claimText: string, originalQuery: string):
     }
   }
 
-  const parts: string[] = [];
   const subjectClause = buildTermsPubMedClause(subjectTerms);
-  if (subjectClause) parts.push(subjectClause);
-
-  for (const outcome of outcomes.slice(0, 3)) {
-    const quoted = quotePubMedPhrase(outcome);
-    if (quoted && !parts.includes(quoted)) parts.push(quoted);
-  }
+  const outcomeClause = joinOrClauses(
+    outcomes.slice(0, 3).map((outcome) => quotePubMedPhrase(outcome))
+  );
+  const parts = [subjectClause, outcomeClause].filter(Boolean);
 
   if (parts.length === 0) {
     return buildTopicPubMedQuery(originalQuery);

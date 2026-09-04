@@ -1407,7 +1407,7 @@ export function DashboardView() {
                     </p>
                   ) : (
                     <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.9rem", fontWeight: 600, lineHeight: 1.2 }}>
-                      Unavailable
+                      PubMed search did not run
                     </p>
                   )}
                 </div>
