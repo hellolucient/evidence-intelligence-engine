@@ -69,7 +69,10 @@ assert(
 const redlightTopic = buildTopicPubMedQuery(redlightQuery);
 assertIncludes(redlightTopic, "red light", "redlight topic");
 assertIncludes(redlightTopic, "photobiomodulation", "redlight synonyms");
+assertIncludes(redlightTopic, "sleep", "redlight outcome must be sleep, not therapy");
 assertNotIncludes(redlightTopic, "try our", "should not search marketing copy");
+assertNotIncludes(redlightTopic, "redlight[tiab]", "should not AND the closed compound");
+assertNotIncludes(redlightTopic, "pbm[tiab]", "PBM acronym is too ambiguous for PubMed");
 
 const melatoninClaim = buildClaimPubMedQuery(
   "Exposure to red light can promote melatonin production.",

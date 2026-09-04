@@ -60,7 +60,7 @@ function normalizeToken(word: string): string {
 }
 
 function tokenize(text: string): string[] {
-  return text
+  return normalizeQueryText(text)
     .replace(/\?/g, " ")
     .split(/\s+/)
     .map(normalizeToken)
@@ -93,16 +93,29 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
     "photobiomodulation",
     "low-level light therapy",
     "low-level laser",
-    "pbm",
     "lllt",
   ],
   "red light": [
     "red light therapy",
     "photobiomodulation",
     "low-level light therapy",
-    "pbm",
   ],
 };
+
+/** Too vague to AND into a PubMed query — they match almost the entire medical literature. */
+const GENERIC_OUTCOME_WORDS = new Set([
+  "light",
+  "therapy",
+  "treatment",
+  "treatments",
+  "device",
+  "effect",
+  "effects",
+  "quality",
+  "health",
+  "wellbeing",
+  "overall",
+]);
 
 const TRAILING_PRODUCT_WORDS = new Set([
   "bed", "device", "machine", "product", "kit", "panel", "lamp", "mask", "session",
@@ -157,6 +170,7 @@ export function buildSubjectPubMedClause(subject: string): string {
   if (terms.length === 0) return "";
 
   const clauses = terms
+    .filter((term) => term.replace(/\s+/g, "").length >= 4)
     .map((term) => quotePubMedPhrase(term))
     .filter(Boolean);
 
@@ -212,47 +226,6 @@ function joinOrClauses(clauses: string[]): string {
   return `(${unique.join(" OR ")})`;
 }
 
-/**
- * Extract likely health outcome terms from query or claim text.
- */
-export function extractOutcomeTerms(text: string, maxTerms = 2): string[] {
-  const tokens = tokenize(text);
-  const outcomes: string[] = [];
-
-  const verbIndex = tokens.findIndex((token) => OUTCOME_VERBS.has(token));
-  const searchTokens = verbIndex >= 0 ? tokens.slice(verbIndex + 1) : tokens;
-
-  for (const token of searchTokens) {
-    if (CLAIM_STOP_WORDS.has(token)) continue;
-    if (token.length < 4) continue;
-    if (!outcomes.includes(token)) {
-      outcomes.push(token);
-    }
-    if (outcomes.length >= maxTerms) break;
-  }
-
-  return outcomes;
-}
-
-/**
- * Build a PubMed search query from a user question.
- */
-export function buildTopicPubMedQuery(query: string): string {
-  const subject = extractPrimarySubject(query);
-  const outcomes = extractOutcomeTerms(query);
-
-  const subjectClause = subject ? buildSubjectPubMedClause(subject) : "";
-  const outcomeClause = joinOrClauses(outcomes.map((outcome) => quotePubMedPhrase(outcome)));
-  const parts = [subjectClause, outcomeClause].filter(Boolean);
-
-  if (parts.length === 0) {
-    const fallback = tokenize(query).slice(0, 3).join(" ");
-    return buildSubjectPubMedClause(fallback) || quotePubMedPhrase("longevity");
-  }
-
-  return parts.join(" AND ");
-}
-
 const HEALTH_OUTCOME_TERMS = [
   "relaxation",
   "anxiety",
@@ -268,13 +241,69 @@ const HEALTH_OUTCOME_TERMS = [
   "blood pressure",
   "heart rate",
   "cortisol",
-  "health",
-  "wellbeing",
-  "well-being",
   "melatonin",
   "circadian",
   "inflammation",
 ];
+
+const VAGUE_HEALTH_OUTCOMES = new Set(["health", "wellbeing", "well-being"]);
+
+/**
+ * Extract likely health outcome terms from query or claim text.
+ * Prefer known health outcomes (sleep, melatonin, …) over leftover subject words
+ * like "therapy" / "redlight", which would AND-match almost all of PubMed.
+ */
+export function extractOutcomeTerms(text: string, maxTerms = 2, subject = ""): string[] {
+  const normalized = normalizeQueryText(text).toLowerCase();
+  const outcomes: string[] = [];
+  const subjectTokens = new Set(tokenize(subject));
+
+  for (const term of HEALTH_OUTCOME_TERMS) {
+    if (VAGUE_HEALTH_OUTCOMES.has(term)) continue;
+    if (!normalized.includes(term)) continue;
+    const label = term === "antioxidants" ? "antioxidant" : term;
+    if (!outcomes.includes(label)) outcomes.push(label);
+    if (outcomes.length >= maxTerms) return outcomes;
+  }
+
+  if (outcomes.length > 0) return outcomes;
+
+  const tokens = tokenize(text);
+  const verbIndex = tokens.findIndex((token) => OUTCOME_VERBS.has(token));
+  const searchTokens = verbIndex >= 0 ? tokens.slice(verbIndex + 1) : tokens;
+
+  for (const token of searchTokens) {
+    if (CLAIM_STOP_WORDS.has(token)) continue;
+    if (GENERIC_OUTCOME_WORDS.has(token)) continue;
+    if (subjectTokens.has(token)) continue;
+    if (token.length < 4) continue;
+    if (!outcomes.includes(token)) {
+      outcomes.push(token);
+    }
+    if (outcomes.length >= maxTerms) break;
+  }
+
+  return outcomes;
+}
+
+/**
+ * Build a PubMed search query from a user question.
+ */
+export function buildTopicPubMedQuery(query: string): string {
+  const subject = extractPrimarySubject(query);
+  const outcomes = extractOutcomeTerms(query, 2, subject);
+
+  const subjectClause = subject ? buildSubjectPubMedClause(subject) : "";
+  const outcomeClause = joinOrClauses(outcomes.map((outcome) => quotePubMedPhrase(outcome)));
+  const parts = [subjectClause, outcomeClause].filter(Boolean);
+
+  if (parts.length === 0) {
+    const fallback = tokenize(query).slice(0, 3).join(" ");
+    return buildSubjectPubMedClause(fallback) || quotePubMedPhrase("longevity");
+  }
+
+  return parts.join(" AND ");
+}
 
 const AROMA_PATTERNS =
   /\b(scent|smell|aroma|odor|odour|olfact|inhal|aromatherapy|fragrance|perfume)\b/i;

@@ -83,6 +83,14 @@ async function main(): Promise<void> {
     redlightRctCount > 0,
     `expected red light therapy RCT count > 0, got ${redlightRctCount}`
   );
+  assert(
+    redlightRctCount < 250,
+    `red light + sleep RCT count looks like the whole PBM field: ${redlightRctCount}`
+  );
+  assert(
+    redlightTopic.toLowerCase().includes("sleep"),
+    `red light topic query should constrain to sleep: ${redlightTopic}`
+  );
 
   console.log("pubmed live checks passed");
 }
