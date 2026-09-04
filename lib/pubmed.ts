@@ -3,7 +3,7 @@
  * Do NOT parse full papers.
  */
 
-import type { PubMedSummary } from "@/engine/types";
+import type { PubMedSummary, SearchSlots } from "@/engine/types";
 import { buildTopicPubMedQuery } from "@/lib/literature-query";
 import { ncbiEsearchCount } from "@/lib/ncbi-eutils";
 
@@ -11,9 +11,11 @@ import { ncbiEsearchCount } from "@/lib/ncbi-eutils";
  * Get RCT count, meta-analysis count, and publication volume (last 10 years) for the topic.
  */
 export async function fetchPubMedSummary(
-  query: string
+  query: string,
+  slots?: SearchSlots | null
 ): Promise<PubMedSummary | null> {
-  const topicQuery = buildTopicPubMedQuery(query);
+  const topicQuery = buildTopicPubMedQuery(query, slots);
+  if (!topicQuery) return null;
 
   try {
     const [rct_count, meta_analysis_count, publication_volume_last_10_years] =
@@ -31,6 +33,7 @@ export async function fetchPubMedSummary(
       rct_count,
       meta_analysis_count,
       publication_volume_last_10_years,
+      pubmed_query: topicQuery,
     };
   } catch (err) {
     console.error("fetchPubMedSummary failed for topic:", topicQuery, err);

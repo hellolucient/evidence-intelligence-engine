@@ -22,6 +22,7 @@ function truncateMiddle(value: string, head: number, tail: number): string {
 }
 
 const ANALYSIS_STEPS = [
+  "Understanding the question…",
   "Generating AI response…",
   "Extracting claims…",
   "Checking evidence flags…",
@@ -368,6 +369,13 @@ function ClaimCard({
         letterSpacing: "0.05em"
       }}>
         {claim.claim_type} · {claim.detected_certainty_level}
+        {(claim.intervention || claim.outcome) && (
+          <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "#6b7280" }}>
+            {" "}
+            · {claim.intervention || "—"}
+            {claim.outcome ? ` → ${claim.outcome}` : ""}
+          </span>
+        )}
       </div>
       <div style={{ fontSize: "0.875rem", lineHeight: 1.6, color: "#374151", marginBottom: studyData !== undefined ? "0.75rem" : 0 }}>
         {claim.claim_text}
@@ -1397,6 +1405,22 @@ export function DashboardView() {
                       <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.95rem", fontWeight: 700, lineHeight: 1.3, color: "#111827" }}>
                         {result.literature_summary.pubmed_rct_pool} PubMed RCTs · {result.literature_summary.pubmed_meta_pool} PubMed meta-analyses · {result.literature_summary.linked_papers_count} papers linked
                       </p>
+                      {(result.literature_summary.intervention || result.query_parse?.intervention) && (
+                        <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.4, color: "#1f2937" }}>
+                          Parsed: {result.literature_summary.intervention || result.query_parse?.intervention}
+                          {(result.literature_summary.outcomes?.length || result.query_parse?.outcomes?.length)
+                            ? ` → ${(result.literature_summary.outcomes || result.query_parse?.outcomes || []).join(", ")}`
+                            : result.literature_summary.outcome_is_broad
+                              ? " → (no specific outcome — counts are for the intervention overall)"
+                              : ""}
+                          {result.query_parse?.frame === "marketing" ? " · marketing copy" : ""}
+                        </p>
+                      )}
+                      {result.literature_summary.pubmed_query && (
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
+                          PubMed query: {result.literature_summary.pubmed_query}
+                        </p>
+                      )}
                       <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>
                         {result.literature_summary.linked_pubmed_count ?? 0} from PubMed · {result.literature_summary.linked_semantic_scholar_count ?? 0} from Semantic Scholar · {result.literature_summary.claims_with_matches} of {result.literature_summary.claims_searched} claims matched specific papers
                       </p>

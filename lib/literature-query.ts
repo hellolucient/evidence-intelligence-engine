@@ -2,6 +2,8 @@
  * Shared PubMed / literature search query building.
  */
 
+import type { SearchSlots } from "@/engine/types";
+
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
   "benefits", "benefit", "what", "does", "can", "will", "how", "why", "when", "is", "are",
@@ -219,6 +221,41 @@ export function extractPrimarySubject(query: string): string {
   return meaningful.join(" ").trim();
 }
 
+export function sanitizeIntervention(text: string): string {
+  const normalized = normalizeQueryText(text).replace(/\?/g, "").trim();
+  if (!normalized) return "";
+  if (normalized.split(/\s+/).length > 6) {
+    return extractPrimarySubject(normalized);
+  }
+  const words = normalized.split(/\s+/);
+  while (words.length > 0) {
+    const last = normalizeToken(words[words.length - 1] ?? "");
+    if (!TRAILING_PRODUCT_WORDS.has(last)) break;
+    words.pop();
+  }
+  return words.join(" ").trim();
+}
+
+const VAGUE_OUTCOME_PHRASES = new Set([
+  ...GENERIC_OUTCOME_WORDS,
+  "better",
+  "wellness",
+  "energy",
+  "feel",
+  "feeling",
+  "wellbeing",
+  "well-being",
+  "health",
+]);
+
+export function isSpecificOutcome(term: string): boolean {
+  const normalized = term.trim().toLowerCase();
+  if (!normalized) return false;
+  if (VAGUE_OUTCOME_PHRASES.has(normalized)) return false;
+  if (HEALTH_OUTCOME_TERMS.includes(normalized)) return true;
+  return normalized.length >= 4 && !GENERIC_OUTCOME_WORDS.has(normalized);
+}
+
 function joinOrClauses(clauses: string[]): string {
   const unique = [...new Set(clauses.filter(Boolean))];
   if (unique.length === 0) return "";
@@ -289,20 +326,57 @@ export function extractOutcomeTerms(text: string, maxTerms = 2, subject = ""): s
 /**
  * Build a PubMed search query from a user question.
  */
-export function buildTopicPubMedQuery(query: string): string {
-  const subject = extractPrimarySubject(query);
-  const outcomes = extractOutcomeTerms(query, 2, subject);
+export function heuristicSearchSlots(query: string): SearchSlots {
+  const intervention = extractPrimarySubject(query);
+  const outcomes = extractOutcomeTerms(query, 2, intervention).filter(isSpecificOutcome);
+  const lower = query.toLowerCase();
+  const marketing = /\b(try our|guaranteed|buy now|order now)\b/i.test(query);
+  const question = /\?/.test(query) || /^(what|does|can|how|is|are|why)\b/i.test(lower.trim());
+  return {
+    intervention,
+    outcomes,
+    frame: marketing ? "marketing" : question ? "question" : "claim",
+    outcome_is_broad: outcomes.length === 0,
+  };
+}
 
-  const subjectClause = subject ? buildSubjectPubMedClause(subject) : "";
-  const outcomeClause = joinOrClauses(outcomes.map((outcome) => quotePubMedPhrase(outcome)));
-  const parts = [subjectClause, outcomeClause].filter(Boolean);
+export function claimToSearchSlots(
+  claim: { intervention?: string; outcome?: string },
+  topic: SearchSlots
+): SearchSlots {
+  const intervention = sanitizeIntervention(claim.intervention ?? "") || topic.intervention;
+  const outcome =
+    claim.outcome && isSpecificOutcome(claim.outcome)
+      ? claim.outcome.trim().toLowerCase()
+      : undefined;
+  const outcomes = outcome ? [outcome] : topic.outcomes;
+  return {
+    intervention,
+    outcomes,
+    population: topic.population,
+    frame: topic.frame,
+    outcome_is_broad: outcomes.length === 0,
+  };
+}
 
-  if (parts.length === 0) {
-    const fallback = tokenize(query).slice(0, 3).join(" ");
-    return buildSubjectPubMedClause(fallback) || quotePubMedPhrase("longevity");
-  }
+export function buildPubMedQueryFromSlots(slots: SearchSlots): string {
+  if (!slots.intervention) return "";
+  const subjectClause = buildSubjectPubMedClause(slots.intervention);
+  const specificOutcomes = slots.outcome_is_broad
+    ? []
+    : slots.outcomes.filter(isSpecificOutcome).slice(0, 2);
+  const outcomeClause = joinOrClauses(specificOutcomes.map((outcome) => quotePubMedPhrase(outcome)));
+  return [subjectClause, outcomeClause].filter(Boolean).join(" AND ");
+}
 
-  return parts.join(" AND ");
+export function slotsToPlainQuery(slots: SearchSlots): string {
+  const outcomes = slots.outcome_is_broad ? [] : slots.outcomes.filter(isSpecificOutcome);
+  return [slots.intervention, ...outcomes.slice(0, 2)].filter(Boolean).join(" ").trim();
+}
+
+export function buildTopicPubMedQuery(query: string, slots?: SearchSlots | null): string {
+  const resolved = slots?.intervention ? slots : heuristicSearchSlots(query);
+  return buildPubMedQueryFromSlots(resolved) || quotePubMedPhrase("longevity");
 }
 
 const AROMA_PATTERNS =
@@ -411,8 +485,18 @@ function isUsableKeyword(keyword: string): boolean {
 
 export function getClaimLiteratureMatchPlan(
   claimText: string,
-  originalQuery: string
+  originalQuery: string,
+  slots?: SearchSlots | null
 ): { subjects: string[]; outcomes: string[] } {
+  if (slots?.intervention) {
+    const subjects = getSubjectSearchTerms(slots.intervention)
+      .map((term) => term.toLowerCase())
+      .filter(isUsableKeyword);
+    const outcomes = (slots.outcome_is_broad ? [] : slots.outcomes)
+      .map((term) => term.toLowerCase())
+      .filter(isUsableKeyword);
+    return { subjects, outcomes };
+  }
   const subjects = extractClaimSubjectTerms(claimText, originalQuery)
     .map((term) => term.toLowerCase())
     .filter(isUsableKeyword);
@@ -441,10 +525,17 @@ function buildTermsPubMedClause(terms: string[]): string {
 /**
  * Build a PubMed search query for a specific claim.
  */
-export function buildClaimPubMedQuery(claimText: string, originalQuery: string): string {
+export function buildClaimPubMedQuery(
+  claimText: string,
+  originalQuery: string,
+  slots?: SearchSlots | null
+): string {
+  if (slots?.intervention) {
+    return buildPubMedQueryFromSlots(slots) || buildTopicPubMedQuery(originalQuery);
+  }
   const subjectTerms = extractClaimSubjectTerms(claimText, originalQuery);
-  const claimOutcomes = extractClaimOutcomeTerms(claimText);
-  const queryOutcomes = extractOutcomeTerms(originalQuery);
+  const claimOutcomes = extractClaimOutcomeTerms(claimText).filter(isSpecificOutcome);
+  const queryOutcomes = extractOutcomeTerms(originalQuery).filter(isSpecificOutcome);
   const outcomes = [...claimOutcomes];
   if (outcomes.length === 0) {
     for (const outcome of queryOutcomes) {
@@ -473,8 +564,12 @@ export function buildClaimPubMedQuery(claimText: string, originalQuery: string):
  */
 export function buildPlainLiteratureQuery(
   claimText: string,
-  originalQuery: string
+  originalQuery: string,
+  slots?: SearchSlots | null
 ): string {
+  if (slots?.intervention) {
+    return slotsToPlainQuery(slots) || originalQuery.replace(/\?/g, "").trim();
+  }
   const subjectTerms = extractClaimSubjectTerms(claimText, originalQuery);
   const claimOutcomes = extractClaimOutcomeTerms(claimText);
   const queryOutcomes = extractOutcomeTerms(originalQuery);
@@ -487,7 +582,10 @@ export function buildPlainLiteratureQuery(
   return parts.join(" ").trim() || originalQuery.replace(/\?/g, "").trim();
 }
 
-export function buildPlainTopicQuery(query: string): string {
+export function buildPlainTopicQuery(query: string, slots?: SearchSlots | null): string {
+  if (slots?.intervention) {
+    return slotsToPlainQuery(slots) || query.replace(/\?/g, "").trim();
+  }
   const subject = extractPrimarySubject(query);
   const subjectTerms = getSubjectSearchTerms(subject);
   const outcomes = extractOutcomeTerms(query);

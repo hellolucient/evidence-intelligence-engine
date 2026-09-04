@@ -12,10 +12,24 @@ export type ClaimType =
 
 export type CertaintyLevel = "strong" | "moderate" | "speculative";
 
+export type QueryFrame = "question" | "marketing" | "claim";
+
+/** Structured search slots parsed from the user question or a single claim. */
+export interface SearchSlots {
+  intervention: string;
+  outcomes: string[];
+  population?: string;
+  frame: QueryFrame;
+  /** True when there is no specific health outcome (e.g. “feel better”). */
+  outcome_is_broad: boolean;
+}
+
 export interface ExtractedClaim {
   claim_text: string;
   claim_type: ClaimType;
   detected_certainty_level: CertaintyLevel;
+  intervention?: string;
+  outcome?: string;
 }
 
 export type HumanHealthspanEvidence = "none" | "limited" | "moderate" | "strong";
@@ -84,6 +98,7 @@ export interface PubMedSummary {
   rct_count: number;
   meta_analysis_count: number;
   publication_volume_last_10_years: number;
+  pubmed_query?: string;
 }
 
 /** Rolled-up literature counts across topic-level PubMed and per-claim searches. */
@@ -105,6 +120,11 @@ export interface LiteratureSummary {
   /** Linked papers whose source is Semantic Scholar. */
   linked_semantic_scholar_count: number;
   publication_volume_last_10_years: number;
+  pubmed_query?: string;
+  intervention?: string;
+  outcomes?: string[];
+  outcome_is_broad?: boolean;
+  frame?: QueryFrame;
 }
 
 export interface ClaimPubMedData {
@@ -143,6 +163,7 @@ export interface AnalyzeResponse {
   claims: ExtractedClaim[];
   evidence_flags: EvidenceFlag[];
   coherence_score: number;
+  query_parse?: SearchSlots;
   pubmed_summary?: PubMedSummary;
   literature_summary?: LiteratureSummary;
   claim_pubmed_data?: ClaimPubMedData[];

@@ -11,6 +11,7 @@ import {
   getClaimLiteratureMatchPlan,
 } from "@/lib/literature-query";
 import { ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
+import type { SearchSlots } from "@/engine/types";
 
 export interface Study {
   title: string;
@@ -195,9 +196,14 @@ function titleMatchesKeyword(title: string, keyword: string): boolean {
 function filterStudiesForClaim(
   studies: Study[],
   claimText: string,
-  originalQuery: string
+  originalQuery: string,
+  slots?: SearchSlots | null
 ): Study[] {
-  const { subjects, outcomes } = getClaimLiteratureMatchPlan(claimText, originalQuery);
+  const { subjects, outcomes } = getClaimLiteratureMatchPlan(
+    claimText,
+    originalQuery,
+    slots
+  );
   if (subjects.length === 0 && outcomes.length === 0) return studies.slice(0, 8);
 
   const matched = studies.filter((study) => {
@@ -227,10 +233,11 @@ function filterStudiesForClaim(
  * Multi-source search for RCTs and meta-analyses related to a user query topic.
  */
 export async function searchStudiesForTopic(
-  query: string
+  query: string,
+  slots?: SearchSlots | null
 ): Promise<StudySearchResult> {
-  const pubmedTerm = buildTopicPubMedQuery(query);
-  const plainTerm = buildPlainTopicQuery(query);
+  const pubmedTerm = buildTopicPubMedQuery(query, slots);
+  const plainTerm = buildPlainTopicQuery(query, slots);
 
   const semanticScholarKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
 
@@ -266,10 +273,11 @@ export async function searchStudiesForTopic(
  */
 export async function searchStudiesForClaim(
   claimText: string,
-  originalQuery: string
+  originalQuery: string,
+  slots?: SearchSlots | null
 ): Promise<StudySearchResult> {
-  const pubmedTerm = buildClaimPubMedQuery(claimText, originalQuery);
-  const plainTerm = buildPlainLiteratureQuery(claimText, originalQuery);
+  const pubmedTerm = buildClaimPubMedQuery(claimText, originalQuery, slots);
+  const plainTerm = buildPlainLiteratureQuery(claimText, originalQuery, slots);
 
   const semanticScholarKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
 
@@ -297,8 +305,8 @@ export async function searchStudiesForClaim(
     }
   }
 
-  const filteredRcts = filterStudiesForClaim(uniqueRCTs, claimText, originalQuery);
-  const filteredMeta = filterStudiesForClaim(metaAnalyses, claimText, originalQuery);
+  const filteredRcts = filterStudiesForClaim(uniqueRCTs, claimText, originalQuery, slots);
+  const filteredMeta = filterStudiesForClaim(metaAnalyses, claimText, originalQuery, slots);
 
   return {
     rct_count: filteredRcts.length,

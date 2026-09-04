@@ -2,6 +2,7 @@ import type {
   ClaimStudyData,
   LiteratureSummary,
   PubMedSummary,
+  SearchSlots,
   TopicStudyData,
 } from "@/engine/types";
 
@@ -27,7 +28,8 @@ function collectStudies(
 export function rollupLiterature(
   pubmedSummary?: PubMedSummary,
   claimStudyData?: ClaimStudyData[],
-  topicStudyData?: TopicStudyData
+  topicStudyData?: TopicStudyData,
+  slots?: SearchSlots | null
 ): LiteratureSummary | undefined {
   const pubmedRctPool = pubmedSummary?.rct_count ?? 0;
   const pubmedMetaPool = pubmedSummary?.meta_analysis_count ?? 0;
@@ -56,5 +58,10 @@ export function rollupLiterature(
       (study) => study.source === "semantic_scholar"
     ).length,
     publication_volume_last_10_years: publicationVolume,
+    pubmed_query: pubmedSummary?.pubmed_query,
+    intervention: slots?.intervention,
+    outcomes: slots?.outcomes,
+    outcome_is_broad: slots?.outcome_is_broad,
+    frame: slots?.frame,
   };
 }

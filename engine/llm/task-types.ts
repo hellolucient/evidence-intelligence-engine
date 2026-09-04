@@ -1,5 +1,6 @@
 export type TaskType =
   | "raw_answer"
+  | "query_parse"
   | "claim_extraction"
   | "rewrite"
   | "downstream_menu_description"

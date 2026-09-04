@@ -28,6 +28,7 @@ export type ModelRouter = {
 function defaultTierForTask(taskType: TaskType): ModelTier {
   switch (taskType) {
     case "raw_answer":
+    case "query_parse":
     case "claim_extraction":
     case "downstream_menu_description":
     case "downstream_product_description":

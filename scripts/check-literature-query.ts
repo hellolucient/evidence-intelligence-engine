@@ -3,8 +3,10 @@
  */
 import {
   buildClaimPubMedQuery,
+  buildPubMedQueryFromSlots,
   buildTopicPubMedQuery,
   extractPrimarySubject,
+  heuristicSearchSlots,
 } from "../lib/literature-query";
 
 function assert(condition: unknown, message: string): void {
@@ -86,9 +88,36 @@ assertNotIncludes(
   "melatonin must not replace red light as the PubMed subject"
 );
 
+const redlightSlots = heuristicSearchSlots(redlightQuery);
+assert(
+  redlightSlots.intervention.toLowerCase() === "red light therapy",
+  `heuristic intervention, got "${redlightSlots.intervention}"`
+);
+assert(redlightSlots.outcomes.includes("sleep"), `heuristic outcomes ${redlightSlots.outcomes}`);
+assert(redlightSlots.frame === "marketing", "redlight pitch is marketing copy");
+assert(!redlightSlots.outcome_is_broad, "sleep is a specific outcome");
+const fromSlots = buildPubMedQueryFromSlots(redlightSlots);
+assertIncludes(fromSlots, "sleep", "slots query includes sleep");
+assertNotIncludes(fromSlots, "try our", "slots query strips marketing");
+
+const slotDrivenClaim = buildClaimPubMedQuery(
+  "Exposure to red light can promote melatonin production.",
+  redlightQuery,
+  {
+    intervention: "red light therapy",
+    outcomes: ["melatonin"],
+    frame: "marketing",
+    outcome_is_broad: false,
+  }
+);
+assertIncludes(slotDrivenClaim, "melatonin", "slot-driven claim outcome");
+assertIncludes(slotDrivenClaim, "photobiomodulation", "slot-driven claim synonyms");
+
 console.log("literature-query checks passed");
 console.log("  tea topic:", teaTopic);
 console.log("  scent claim:", claimQuery);
 console.log("  lavender claim:", lavenderClaim);
 console.log("  redlight topic:", redlightTopic);
 console.log("  melatonin claim:", melatoninClaim);
+console.log("  redlight slots:", redlightSlots);
+console.log("  slot-driven claim:", slotDrivenClaim);

@@ -2,7 +2,7 @@
  * Live NCBI checks: topic counts, RCT vs meta-analysis filters, burst load.
  * Run with: npx tsx scripts/check-pubmed-live.ts
  */
-import { buildClaimPubMedQuery, buildTopicPubMedQuery } from "../lib/literature-query";
+import { buildClaimPubMedQuery, buildTopicPubMedQuery, heuristicSearchSlots } from "../lib/literature-query";
 import { ncbiEsearch, ncbiEsearchCount } from "../lib/ncbi-eutils";
 
 function assert(condition: unknown, message: string): void {
@@ -40,7 +40,8 @@ async function main(): Promise<void> {
 
   const redlightQuery =
     "try our redlight therapy bed, you're guaranteed to improve your sleep and feel much better";
-  const redlightTopic = buildTopicPubMedQuery(redlightQuery);
+  const redlightSlots = heuristicSearchSlots(redlightQuery);
+  const redlightTopic = buildTopicPubMedQuery(redlightQuery, redlightSlots);
   const redlightRctCount = await ncbiEsearchCount(
     `(${redlightTopic}) AND randomized controlled trial[pt]`
   );
