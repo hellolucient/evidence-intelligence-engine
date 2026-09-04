@@ -5,16 +5,20 @@ import type {
   TopicStudyData,
 } from "@/engine/types";
 
-function collectUniqueStudies(
-  ...studyGroups: Array<{ studies: { title: string }[] } | undefined>
-): Set<string> {
-  const uniqueStudies = new Set<string>();
+type StudyLike = { title: string; source?: "pubmed" | "semantic_scholar" };
+
+function collectStudies(
+  ...studyGroups: Array<{ studies: StudyLike[] } | undefined>
+): StudyLike[] {
+  const unique = new Map<string, StudyLike>();
   for (const group of studyGroups) {
     for (const study of group?.studies ?? []) {
-      uniqueStudies.add(study.title.toLowerCase().trim());
+      const key = study.title.toLowerCase().trim();
+      if (!key || unique.has(key)) continue;
+      unique.set(key, study);
     }
   }
-  return uniqueStudies;
+  return [...unique.values()];
 }
 
 /**
@@ -29,8 +33,8 @@ export function rollupLiterature(
   const pubmedMetaPool = pubmedSummary?.meta_analysis_count ?? 0;
   const publicationVolume = pubmedSummary?.publication_volume_last_10_years ?? 0;
 
-  const linkedPapers = collectUniqueStudies(topicStudyData, ...(claimStudyData ?? []));
-  const uniqueClaimPapers = collectUniqueStudies(...(claimStudyData ?? []));
+  const linked = collectStudies(topicStudyData, ...(claimStudyData ?? []));
+  const uniqueClaimPapers = collectStudies(...(claimStudyData ?? []));
 
   const claimsSearched = claimStudyData?.length ?? 0;
   const claimsWithMatches =
@@ -43,10 +47,14 @@ export function rollupLiterature(
   return {
     pubmed_rct_pool: pubmedRctPool,
     pubmed_meta_pool: pubmedMetaPool,
-    linked_papers_count: linkedPapers.size,
+    linked_papers_count: linked.length,
     claims_searched: claimsSearched,
     claims_with_matches: claimsWithMatches,
-    unique_claim_papers: uniqueClaimPapers.size,
+    unique_claim_papers: uniqueClaimPapers.length,
+    linked_pubmed_count: linked.filter((study) => study.source === "pubmed").length,
+    linked_semantic_scholar_count: linked.filter(
+      (study) => study.source === "semantic_scholar"
+    ).length,
     publication_volume_last_10_years: publicationVolume,
   };
 }

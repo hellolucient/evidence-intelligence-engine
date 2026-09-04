@@ -38,6 +38,16 @@ async function main(): Promise<void> {
   );
   const burstZeros = burst.filter((count) => count === 0).length;
 
+  const redlightQuery =
+    "try our redlight therapy bed, you're guaranteed to improve your sleep and feel much better";
+  const redlightTopic = buildTopicPubMedQuery(redlightQuery);
+  const redlightRctCount = await ncbiEsearchCount(
+    `(${redlightTopic}) AND randomized controlled trial[pt]`
+  );
+  const redlightMetaCount = await ncbiEsearchCount(
+    `(${redlightTopic}) AND meta-analysis[pt]`
+  );
+
   console.log(
     JSON.stringify(
       {
@@ -51,6 +61,9 @@ async function main(): Promise<void> {
         metaIds: metaIds.ids.length,
         burstZeros,
         burstSample: burst[0],
+        redlightTopic,
+        redlightRctCount,
+        redlightMetaCount,
       },
       null,
       2
@@ -66,6 +79,10 @@ async function main(): Promise<void> {
     `expected claim-specific RCT count > 0, got ${claimRctCount}`
   );
   assert(burstZeros === 0, `queued NCBI burst produced ${burstZeros} zeros`);
+  assert(
+    redlightRctCount > 0,
+    `expected red light therapy RCT count > 0, got ${redlightRctCount}`
+  );
 
   console.log("pubmed live checks passed");
 }

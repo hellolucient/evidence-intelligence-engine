@@ -60,7 +60,32 @@ const lavenderClaim = buildClaimPubMedQuery(
 assertNotIncludes(lavenderClaim, "jasmine oil", "non-jasmine aroma should not inject jasmine oil");
 assertIncludes(lavenderClaim, "aromatherapy", "aroma claim");
 
+const redlightQuery =
+  "try our redlight therapy bed, you're guaranteed to improve your sleep and feel much better";
+assert(
+  extractPrimarySubject(redlightQuery).toLowerCase() === "red light therapy",
+  `redlight marketing copy should extract "red light therapy", got "${extractPrimarySubject(redlightQuery)}"`
+);
+const redlightTopic = buildTopicPubMedQuery(redlightQuery);
+assertIncludes(redlightTopic, "red light", "redlight topic");
+assertIncludes(redlightTopic, "photobiomodulation", "redlight synonyms");
+assertNotIncludes(redlightTopic, "try our", "should not search marketing copy");
+
+const melatoninClaim = buildClaimPubMedQuery(
+  "Exposure to red light can promote melatonin production.",
+  redlightQuery
+);
+assertIncludes(melatoninClaim, "red light", "melatonin claim stays about red light");
+assertIncludes(melatoninClaim, "melatonin", "melatonin is the outcome");
+assertNotIncludes(
+  melatoninClaim.split("AND")[0] ?? "",
+  "melatonin[tiab]",
+  "melatonin must not replace red light as the PubMed subject"
+);
+
 console.log("literature-query checks passed");
 console.log("  tea topic:", teaTopic);
 console.log("  scent claim:", claimQuery);
 console.log("  lavender claim:", lavenderClaim);
+console.log("  redlight topic:", redlightTopic);
+console.log("  melatonin claim:", melatoninClaim);

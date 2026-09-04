@@ -12,6 +12,8 @@ const QUERY_NOISE_WORDS = new Set([
   "there", "value", "worth", "anyone", "anybody", "someone", "something",
   "about", "into", "from", "than", "then", "also", "just", "even", "still",
   "your", "their", "they", "them", "this", "that", "these", "those",
+  "try", "our", "we", "us", "you", "youre", "guaranteed", "guarantee",
+  "come", "please", "feel", "much", "better",
 ]);
 
 /** Grammar words that must not become the PubMed subject and must not cut a phrase short. */
@@ -86,7 +88,36 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
   "herbal tea": ["tea", "herbal"],
   "chamomile tea": ["chamomile", "tea"],
   "valerian tea": ["valerian", "tea"],
+  "red light therapy": [
+    "red light",
+    "photobiomodulation",
+    "low-level light therapy",
+    "low-level laser",
+    "pbm",
+    "lllt",
+  ],
+  "red light": [
+    "red light therapy",
+    "photobiomodulation",
+    "low-level light therapy",
+    "pbm",
+  ],
 };
+
+const TRAILING_PRODUCT_WORDS = new Set([
+  "bed", "device", "machine", "product", "kit", "panel", "lamp", "mask", "session",
+]);
+
+const SHORT_SUBJECT_ACRONYMS = new Set(["pbm", "lllt"]);
+
+/** Expand closed compounds and light punctuation so marketing copy is searchable. */
+export function normalizeQueryText(text: string): string {
+  return text
+    .replace(/\bredlight\b/gi, "red light")
+    .replace(/\bnear[-]?infrared\b/gi, "near infrared")
+    .replace(/you're/gi, "you are")
+    .replace(/['’]/g, " ");
+}
 
 function getSubjectSearchTerms(subject: string): string[] {
   const normalized = subject.toLowerCase().trim();
@@ -111,6 +142,12 @@ function getSubjectSearchTerms(subject: string): string[] {
     }
   }
 
+  if (normalized.includes("red light") || normalized.includes("photobiomodulation")) {
+    terms.add("red light");
+    terms.add("red light therapy");
+    terms.add("photobiomodulation");
+  }
+
   return [...terms];
 }
 
@@ -133,7 +170,7 @@ export function buildSubjectPubMedClause(subject: string): string {
  * e.g. "jasmine tea will improve your sleep" -> "jasmine tea"
  */
 export function extractPrimarySubject(query: string): string {
-  const words = query
+  const words = normalizeQueryText(query)
     .replace(/\?/g, "")
     .trim()
     .split(/\s+/)
@@ -157,6 +194,12 @@ export function extractPrimarySubject(query: string): string {
 
     meaningful.push(word);
     if (meaningful.length >= 4) break;
+  }
+
+  while (meaningful.length > 0) {
+    const last = normalizeToken(meaningful[meaningful.length - 1] ?? "");
+    if (!TRAILING_PRODUCT_WORDS.has(last)) break;
+    meaningful.pop();
   }
 
   return meaningful.join(" ").trim();
@@ -228,6 +271,9 @@ const HEALTH_OUTCOME_TERMS = [
   "health",
   "wellbeing",
   "well-being",
+  "melatonin",
+  "circadian",
+  "inflammation",
 ];
 
 const AROMA_PATTERNS =
@@ -267,13 +313,39 @@ const SUBSTANCE_TERMS = [
   "egcg",
 ];
 
-function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
-  const lower = claimText.toLowerCase();
+function extractInterventionTerms(text: string): string[] {
+  const normalized = normalizeQueryText(text).toLowerCase();
   const terms = new Set<string>();
 
-  for (const substance of SUBSTANCE_TERMS) {
-    if (lower.includes(substance)) {
-      terms.add(substance === "l-theanine" ? "theanine" : substance.replace(/s$/, ""));
+  for (const [key, synonyms] of Object.entries(SUBJECT_SYNONYMS)) {
+    if (!normalized.includes(key)) continue;
+    terms.add(key);
+    for (const synonym of synonyms) terms.add(synonym);
+  }
+
+  if (normalized.includes("red light") || normalized.includes("photobiomodulation")) {
+    terms.add("red light");
+    terms.add("red light therapy");
+    terms.add("photobiomodulation");
+  }
+
+  return [...terms];
+}
+
+function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
+  const lower = normalizeQueryText(claimText).toLowerCase();
+  const terms = new Set<string>();
+
+  for (const intervention of extractInterventionTerms(`${claimText} ${originalQuery}`)) {
+    terms.add(intervention);
+  }
+
+  // Substances are the subject only when no intervention (tea, red light, etc.) was found.
+  if (terms.size === 0) {
+    for (const substance of SUBSTANCE_TERMS) {
+      if (lower.includes(substance)) {
+        terms.add(substance === "l-theanine" ? "theanine" : substance.replace(/s$/, ""));
+      }
     }
   }
 
@@ -286,13 +358,10 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
     if (lower.includes("jasmine") || originalQuery.toLowerCase().includes("jasmine")) {
       terms.add("jasmine");
       terms.add("jasmine oil");
-    } else {
-      const primary = extractPrimarySubject(originalQuery);
-      if (primary) terms.add(primary);
     }
   }
 
-  if (INGESTION_PATTERNS.test(lower)) {
+  if (terms.size === 0 && INGESTION_PATTERNS.test(lower)) {
     for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
       terms.add(term);
     }
@@ -307,19 +376,30 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
   return [...terms];
 }
 
+function isUsableKeyword(keyword: string): boolean {
+  return keyword.length >= 4 || SHORT_SUBJECT_ACRONYMS.has(keyword);
+}
+
+export function getClaimLiteratureMatchPlan(
+  claimText: string,
+  originalQuery: string
+): { subjects: string[]; outcomes: string[] } {
+  const subjects = extractClaimSubjectTerms(claimText, originalQuery)
+    .map((term) => term.toLowerCase())
+    .filter(isUsableKeyword);
+  const outcomes = extractClaimOutcomeTerms(claimText, 5)
+    .map((term) => term.toLowerCase())
+    .filter(isUsableKeyword);
+  return { subjects, outcomes };
+}
+
 /** Keywords used to match fetched papers back to a specific claim. */
 export function getClaimLiteratureKeywords(
   claimText: string,
   originalQuery: string
 ): string[] {
-  const keywords = new Set<string>();
-  for (const term of extractClaimSubjectTerms(claimText, originalQuery)) {
-    keywords.add(term.toLowerCase());
-  }
-  for (const term of extractClaimOutcomeTerms(claimText, 5)) {
-    keywords.add(term.toLowerCase());
-  }
-  return [...keywords].filter((keyword) => keyword.length >= 4);
+  const { subjects, outcomes } = getClaimLiteratureMatchPlan(claimText, originalQuery);
+  return [...new Set([...subjects, ...outcomes])];
 }
 
 function buildTermsPubMedClause(terms: string[]): string {

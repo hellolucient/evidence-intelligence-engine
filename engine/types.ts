@@ -100,6 +100,10 @@ export interface LiteratureSummary {
   claims_with_matches: number;
   /** Unique papers matched across claim-specific filters. */
   unique_claim_papers: number;
+  /** Linked papers whose source is PubMed. */
+  linked_pubmed_count: number;
+  /** Linked papers whose source is Semantic Scholar. */
+  linked_semantic_scholar_count: number;
   publication_volume_last_10_years: number;
 }
 

@@ -8,7 +8,7 @@ import {
   buildPlainLiteratureQuery,
   buildPlainTopicQuery,
   buildTopicPubMedQuery,
-  getClaimLiteratureKeywords,
+  getClaimLiteratureMatchPlan,
 } from "@/lib/literature-query";
 import { ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
 
@@ -188,22 +188,39 @@ async function searchMetaAnalyses(
   return unique.slice(0, 10);
 }
 
+function titleMatchesKeyword(title: string, keyword: string): boolean {
+  return title.includes(keyword);
+}
+
 function filterStudiesForClaim(
   studies: Study[],
   claimText: string,
   originalQuery: string
 ): Study[] {
-  const keywords = getClaimLiteratureKeywords(claimText, originalQuery);
-  if (keywords.length === 0) return studies.slice(0, 8);
+  const { subjects, outcomes } = getClaimLiteratureMatchPlan(claimText, originalQuery);
+  if (subjects.length === 0 && outcomes.length === 0) return studies.slice(0, 8);
 
   const matched = studies.filter((study) => {
     const haystack = study.title.toLowerCase();
-    return keywords.some((keyword) => haystack.includes(keyword));
+    const subjectHit =
+      subjects.length === 0 || subjects.some((keyword) => titleMatchesKeyword(haystack, keyword));
+    if (!subjectHit) return false;
+    if (outcomes.length === 0) return true;
+    return outcomes.some((keyword) => titleMatchesKeyword(haystack, keyword));
   });
 
   if (matched.length > 0) return matched.slice(0, 10);
-  // Title keyword filter can be too strict (e.g. synonym papers). Keep a small related set.
-  return studies.slice(0, 5);
+
+  // If outcome is too specific, keep papers that at least mention the intervention.
+  if (subjects.length > 0) {
+    const subjectOnly = studies.filter((study) => {
+      const haystack = study.title.toLowerCase();
+      return subjects.some((keyword) => titleMatchesKeyword(haystack, keyword));
+    });
+    return subjectOnly.slice(0, 5);
+  }
+
+  return [];
 }
 
 /**

@@ -1395,10 +1395,10 @@ export function DashboardView() {
                   {result.literature_summary ? (
                     <>
                       <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.95rem", fontWeight: 700, lineHeight: 1.3, color: "#111827" }}>
-                        {result.literature_summary.pubmed_rct_pool} RCTs in PubMed · {result.literature_summary.pubmed_meta_pool} meta-analyses · {result.literature_summary.linked_papers_count} papers linked
+                        {result.literature_summary.pubmed_rct_pool} PubMed RCTs · {result.literature_summary.pubmed_meta_pool} PubMed meta-analyses · {result.literature_summary.linked_papers_count} papers linked
                       </p>
                       <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>
-                        {result.literature_summary.claims_with_matches} of {result.literature_summary.claims_searched} claims matched specific papers · {result.literature_summary.unique_claim_papers} unique claim papers
+                        {result.literature_summary.linked_pubmed_count ?? 0} from PubMed · {result.literature_summary.linked_semantic_scholar_count ?? 0} from Semantic Scholar · {result.literature_summary.claims_with_matches} of {result.literature_summary.claims_searched} claims matched specific papers
                       </p>
                     </>
                   ) : result.pubmed_summary ? (
