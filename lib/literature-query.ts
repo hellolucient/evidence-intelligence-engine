@@ -34,6 +34,7 @@ const OUTCOME_VERBS = new Set([
   "enhance", "enhances", "enhanced", "enhancing",
   "support", "supports", "supported", "supporting",
   "promote", "promotes", "promoted", "promoting",
+  "strengthen", "strengthens", "strengthened", "strengthening",
   "extend", "extends", "extended", "extending",
   "prevent", "prevents", "prevented", "preventing",
   "cause", "causes", "caused", "causing",
@@ -102,6 +103,34 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
     "photobiomodulation",
     "low-level light therapy",
   ],
+  "hyperbaric chamber": [
+    "hyperbaric oxygen",
+    "hyperbaric oxygen therapy",
+    "hyperbaric oxygenation",
+    "hbot",
+  ],
+  "hyperbaric": [
+    "hyperbaric oxygen",
+    "hyperbaric oxygen therapy",
+    "hyperbaric chamber",
+    "hbot",
+  ],
+  hbot: ["hyperbaric oxygen", "hyperbaric oxygen therapy", "hyperbaric chamber"],
+};
+
+/** Consumer outcome phrases → terms papers actually use. */
+const OUTCOME_SYNONYMS: Record<string, string[]> = {
+  "energy levels": ["fatigue", "energy"],
+  energy: ["fatigue"],
+  "immune system": ["immune", "immunity"],
+  immune: ["immune", "immunity"],
+  immunity: ["immune", "immunity"],
+  "anti-aging": ["aging", "collagen", "skin"],
+  antiaging: ["aging", "collagen", "skin"],
+  "anti aging": ["aging", "collagen", "skin"],
+  "collagen synthesis": ["collagen"],
+  collagen: ["collagen"],
+  "skin glow": ["skin", "collagen"],
 };
 
 /** Too vague to AND into a PubMed query — they match almost the entire medical literature. */
@@ -121,14 +150,17 @@ const GENERIC_OUTCOME_WORDS = new Set([
 
 const TRAILING_PRODUCT_WORDS = new Set([
   "bed", "device", "machine", "product", "kit", "panel", "lamp", "mask", "session",
+  "treatment", "treatments",
 ]);
 
-const SHORT_SUBJECT_ACRONYMS = new Set(["pbm", "lllt"]);
+const SHORT_SUBJECT_ACRONYMS = new Set(["pbm", "lllt", "hbot"]);
 
 /** Expand closed compounds and light punctuation so marketing copy is searchable. */
 export function normalizeQueryText(text: string): string {
   return text
     .replace(/\bredlight\b/gi, "red light")
+    .replace(/\bhyberbaric\b/gi, "hyperbaric")
+    .replace(/\bwil\b/gi, "will")
     .replace(/\bnear[-]?infrared\b/gi, "near infrared")
     .replace(/you're/gi, "you are")
     .replace(/['’]/g, " ");
@@ -163,6 +195,13 @@ function getSubjectSearchTerms(subject: string): string[] {
     terms.add("photobiomodulation");
   }
 
+  if (normalized.includes("hyperbaric") || normalized === "hbot") {
+    terms.add("hyperbaric oxygen");
+    terms.add("hyperbaric oxygen therapy");
+    terms.add("hyperbaric chamber");
+    terms.add("hbot");
+  }
+
   return [...terms];
 }
 
@@ -172,7 +211,10 @@ export function buildSubjectPubMedClause(subject: string): string {
   if (terms.length === 0) return "";
 
   const clauses = terms
-    .filter((term) => term.replace(/\s+/g, "").length >= 4)
+    .filter((term) => {
+      const compact = term.replace(/\s+/g, "").toLowerCase();
+      return compact.length >= 4 || SHORT_SUBJECT_ACRONYMS.has(compact);
+    })
     .map((term) => quotePubMedPhrase(term))
     .filter(Boolean);
 
@@ -281,6 +323,11 @@ const HEALTH_OUTCOME_TERMS = [
   "melatonin",
   "circadian",
   "inflammation",
+  "immune",
+  "immunity",
+  "collagen",
+  "aging",
+  "fatigue",
 ];
 
 const VAGUE_HEALTH_OUTCOMES = new Set(["health", "wellbeing", "well-being"]);
@@ -359,19 +406,48 @@ export function claimToSearchSlots(
   };
 }
 
+function lookupOutcomeSynonyms(outcome: string): string[] | undefined {
+  const normalized = outcome.toLowerCase().trim();
+  if (!normalized) return undefined;
+  if (OUTCOME_SYNONYMS[normalized]) return OUTCOME_SYNONYMS[normalized];
+  for (const [key, synonyms] of Object.entries(OUTCOME_SYNONYMS)) {
+    if (normalized.includes(key) || key.includes(normalized)) return synonyms;
+  }
+  return undefined;
+}
+
+function expandOutcomesForPubMed(outcomes: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const outcome of outcomes.filter(isSpecificOutcome).slice(0, 3)) {
+    const normalized = outcome.toLowerCase().trim();
+    const mapped = lookupOutcomeSynonyms(normalized);
+    const terms = mapped ?? [normalized];
+    for (const term of terms) {
+      const cleaned = term.toLowerCase().trim();
+      if (!cleaned || GENERIC_OUTCOME_WORDS.has(cleaned) || VAGUE_HEALTH_OUTCOMES.has(cleaned)) {
+        continue;
+      }
+      // Mapped scientific terms (fatigue, immune) can be shorter/broader than the
+      // consumer phrase they came from; unmapped leftovers still need to be specific.
+      if (!mapped && !isSpecificOutcome(cleaned)) continue;
+      expanded.add(cleaned);
+    }
+  }
+  return [...expanded];
+}
+
 export function buildPubMedQueryFromSlots(slots: SearchSlots): string {
   if (!slots.intervention) return "";
   const subjectClause = buildSubjectPubMedClause(slots.intervention);
-  const specificOutcomes = slots.outcome_is_broad
-    ? []
-    : slots.outcomes.filter(isSpecificOutcome).slice(0, 2);
+  const specificOutcomes = slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes);
   const outcomeClause = joinOrClauses(specificOutcomes.map((outcome) => quotePubMedPhrase(outcome)));
   return [subjectClause, outcomeClause].filter(Boolean).join(" AND ");
 }
 
 export function slotsToPlainQuery(slots: SearchSlots): string {
-  const outcomes = slots.outcome_is_broad ? [] : slots.outcomes.filter(isSpecificOutcome);
-  return [slots.intervention, ...outcomes.slice(0, 2)].filter(Boolean).join(" ").trim();
+  const subjects = getSubjectSearchTerms(slots.intervention).slice(0, 3);
+  const outcomes = slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes);
+  return [...subjects, ...outcomes.slice(0, 3)].filter(Boolean).join(" ").trim();
 }
 
 export function buildTopicPubMedQuery(query: string, slots?: SearchSlots | null): string {
@@ -430,6 +506,13 @@ function extractInterventionTerms(text: string): string[] {
     terms.add("red light");
     terms.add("red light therapy");
     terms.add("photobiomodulation");
+  }
+
+  if (normalized.includes("hyperbaric") || normalized === "hbot") {
+    terms.add("hyperbaric oxygen");
+    terms.add("hyperbaric oxygen therapy");
+    terms.add("hyperbaric chamber");
+    terms.add("hbot");
   }
 
   return [...terms];
@@ -492,7 +575,7 @@ export function getClaimLiteratureMatchPlan(
     const subjects = getSubjectSearchTerms(slots.intervention)
       .map((term) => term.toLowerCase())
       .filter(isUsableKeyword);
-    const outcomes = (slots.outcome_is_broad ? [] : slots.outcomes)
+    const outcomes = (slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes))
       .map((term) => term.toLowerCase())
       .filter(isUsableKeyword);
     return { subjects, outcomes };

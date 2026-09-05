@@ -113,6 +113,41 @@ const slotDrivenClaim = buildClaimPubMedQuery(
 assertIncludes(slotDrivenClaim, "melatonin", "slot-driven claim outcome");
 assertIncludes(slotDrivenClaim, "photobiomodulation", "slot-driven claim synonyms");
 
+const hbotQuery =
+  "hyberbaric chamber treatment wil Strengthen immune system and energy levels Promote anti-aging, collagen synthesis and skin glow";
+assert(
+  extractPrimarySubject(hbotQuery).toLowerCase() === "hyperbaric chamber",
+  `HBOT subject should be hyperbaric chamber, got "${extractPrimarySubject(hbotQuery)}"`
+);
+const hbotSlots = heuristicSearchSlots(hbotQuery);
+assert(
+  hbotSlots.intervention.toLowerCase() === "hyperbaric chamber",
+  `HBOT heuristic intervention, got "${hbotSlots.intervention}"`
+);
+assert(
+  hbotSlots.outcomes.some((outcome) => outcome.includes("immune") || outcome.includes("collagen")),
+  `HBOT heuristic outcomes ${hbotSlots.outcomes}`
+);
+
+const hbotFromSlots = buildPubMedQueryFromSlots({
+  intervention: "hyperbaric chamber",
+  outcomes: ["immune system", "energy levels", "collagen synthesis"],
+  frame: "claim",
+  outcome_is_broad: false,
+});
+assertIncludes(hbotFromSlots, "hbot", "HBOT query uses HBOT acronym");
+assertIncludes(hbotFromSlots, "hyperbaric oxygen", "HBOT query uses hyperbaric oxygen");
+assertIncludes(hbotFromSlots, "fatigue", "energy levels maps to fatigue");
+assertIncludes(hbotFromSlots, "immune", "immune system maps to immune");
+assertIncludes(hbotFromSlots, "collagen", "collagen synthesis maps to collagen");
+assertNotIncludes(hbotFromSlots, '"energy levels"[tiab]', "do not AND quoted consumer energy phrasing");
+assertNotIncludes(hbotFromSlots, '"immune system"[tiab]', "do not AND quoted consumer immune phrasing");
+assertNotIncludes(hbotFromSlots, '"hyperbaric chamber"[tiab] AND', "subject must be an OR of HBOT synonyms, not the chamber phrase alone");
+
+const hbotTopic = buildTopicPubMedQuery(hbotQuery);
+assertIncludes(hbotTopic, "hbot", "HBOT topic from raw misspelled query");
+assertIncludes(hbotTopic, "hyperbaric oxygen", "HBOT topic synonyms");
+
 console.log("literature-query checks passed");
 console.log("  tea topic:", teaTopic);
 console.log("  scent claim:", claimQuery);
@@ -121,3 +156,6 @@ console.log("  redlight topic:", redlightTopic);
 console.log("  melatonin claim:", melatoninClaim);
 console.log("  redlight slots:", redlightSlots);
 console.log("  slot-driven claim:", slotDrivenClaim);
+console.log("  hbot slots:", hbotSlots);
+console.log("  hbot from slots:", hbotFromSlots);
+console.log("  hbot topic:", hbotTopic);

@@ -2,7 +2,7 @@
  * Live NCBI checks: topic counts, RCT vs meta-analysis filters, burst load.
  * Run with: npx tsx scripts/check-pubmed-live.ts
  */
-import { buildClaimPubMedQuery, buildTopicPubMedQuery, heuristicSearchSlots } from "../lib/literature-query";
+import { buildClaimPubMedQuery, buildPubMedQueryFromSlots, buildTopicPubMedQuery, heuristicSearchSlots } from "../lib/literature-query";
 import { ncbiEsearch, ncbiEsearchCount } from "../lib/ncbi-eutils";
 
 function assert(condition: unknown, message: string): void {
@@ -49,6 +49,23 @@ async function main(): Promise<void> {
     `(${redlightTopic}) AND meta-analysis[pt]`
   );
 
+  const hbotQuery =
+    "hyberbaric chamber treatment wil Strengthen immune system and energy levels Promote anti-aging, collagen synthesis and skin glow";
+  const hbotSlots = {
+    intervention: "hyperbaric chamber",
+    outcomes: ["immune system", "energy levels", "collagen synthesis"],
+    frame: "claim" as const,
+    outcome_is_broad: false,
+  };
+  const hbotTopic = buildPubMedQueryFromSlots(hbotSlots);
+  const hbotFromRaw = buildTopicPubMedQuery(hbotQuery, heuristicSearchSlots(hbotQuery));
+  const hbotRctCount = await ncbiEsearchCount(
+    `(${hbotTopic}) AND randomized controlled trial[pt]`
+  );
+  const brokenHbotRctCount = await ncbiEsearchCount(
+    `("hyperbaric chamber"[tiab] AND ("immune system"[tiab] OR "energy levels"[tiab])) AND randomized controlled trial[pt]`
+  );
+
   console.log(
     JSON.stringify(
       {
@@ -65,6 +82,10 @@ async function main(): Promise<void> {
         redlightTopic,
         redlightRctCount,
         redlightMetaCount,
+        hbotTopic,
+        hbotFromRaw,
+        hbotRctCount,
+        brokenHbotRctCount,
       },
       null,
       2
@@ -91,6 +112,22 @@ async function main(): Promise<void> {
   assert(
     redlightTopic.toLowerCase().includes("sleep"),
     `red light topic query should constrain to sleep: ${redlightTopic}`
+  );
+  assert(
+    brokenHbotRctCount === 0,
+    `sanity: consumer-phrase HBOT query should still be 0 RCTs, got ${brokenHbotRctCount}`
+  );
+  assert(
+    hbotRctCount > 0,
+    `expected HBOT + immune/energy/collagen RCT count > 0, got ${hbotRctCount} for ${hbotTopic}`
+  );
+  assert(
+    hbotRctCount < 200,
+    `HBOT outcome query looks like the whole HBOT field: ${hbotRctCount}`
+  );
+  assert(
+    hbotTopic.toLowerCase().includes("hbot") || hbotTopic.toLowerCase().includes("hyperbaric oxygen"),
+    `HBOT query should use literature synonyms: ${hbotTopic}`
   );
 
   console.log("pubmed live checks passed");
