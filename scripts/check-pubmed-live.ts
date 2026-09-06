@@ -53,18 +53,24 @@ async function main(): Promise<void> {
     "hyberbaric chamber treatment wil Strengthen immune system and energy levels Promote anti-aging, collagen synthesis and skin glow";
   const hbotSlots = {
     intervention: "hyperbaric chamber",
+    intervention_class: "hyperbaric oxygen therapy",
     outcomes: ["immune system", "energy levels", "collagen synthesis"],
     frame: "claim" as const,
     outcome_is_broad: false,
   };
   const hbotTopic = buildPubMedQueryFromSlots(hbotSlots);
+  const hbotClass = buildPubMedQueryFromSlots(hbotSlots, "class");
+  const hbotNarrow = buildPubMedQueryFromSlots(hbotSlots, "specific");
   const hbotFromRaw = buildTopicPubMedQuery(hbotQuery, heuristicSearchSlots(hbotQuery));
-  const hbotRctCount = await ncbiEsearchCount(
-    `(${hbotTopic}) AND randomized controlled trial[pt]`
-  );
-  const brokenHbotRctCount = await ncbiEsearchCount(
-    `("hyperbaric chamber"[tiab] AND ("immune system"[tiab] OR "energy levels"[tiab])) AND randomized controlled trial[pt]`
-  );
+  const [hbotRctCount, hbotClassRctCount, hbotNarrowRctCount, brokenHbotRctCount] =
+    await Promise.all([
+      ncbiEsearchCount(`(${hbotTopic}) AND randomized controlled trial[pt]`),
+      ncbiEsearchCount(`(${hbotClass}) AND randomized controlled trial[pt]`),
+      ncbiEsearchCount(`(${hbotNarrow}) AND randomized controlled trial[pt]`),
+      ncbiEsearchCount(
+        `("hyperbaric chamber"[tiab] AND ("immune system"[tiab] OR "energy levels"[tiab])) AND randomized controlled trial[pt]`
+      ),
+    ]);
 
   console.log(
     JSON.stringify(
@@ -83,8 +89,12 @@ async function main(): Promise<void> {
         redlightRctCount,
         redlightMetaCount,
         hbotTopic,
+        hbotClass,
+        hbotNarrow,
         hbotFromRaw,
         hbotRctCount,
+        hbotClassRctCount,
+        hbotNarrowRctCount,
         brokenHbotRctCount,
       },
       null,
@@ -120,6 +130,18 @@ async function main(): Promise<void> {
   assert(
     hbotRctCount > 0,
     `expected HBOT + immune/energy/collagen RCT count > 0, got ${hbotRctCount} for ${hbotTopic}`
+  );
+  assert(
+    hbotClassRctCount > 0,
+    `expected HBOT class-grain RCT count > 0, got ${hbotClassRctCount} for ${hbotClass}`
+  );
+  assert(
+    hbotNarrow.includes("hyperbaric chamber"),
+    `narrow grain must search the chamber: ${hbotNarrow}`
+  );
+  assert(
+    !hbotNarrow.includes("hbot[tiab]"),
+    `narrow grain must not collapse to HBOT: ${hbotNarrow}`
   );
   assert(
     hbotRctCount < 200,

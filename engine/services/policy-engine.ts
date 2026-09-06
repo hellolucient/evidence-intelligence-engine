@@ -3,7 +3,7 @@
  */
 
 import { useEvidenceMap } from "../config";
-import type { ExtractedClaim, EvidenceFlag, EvidenceMapEntry } from "../types";
+import type { ExtractedClaim, EvidenceFlag, EvidenceMapEntry, SearchSlots } from "../types";
 import {
   analyzeQueryScope,
   getMentionedInterventions,
@@ -16,9 +16,30 @@ const PENALTY = {
   minor_certainty_inflation: 10,
   intervention_not_in_evidence_map: 20,
   tangential_scope_match: 15,
+  class_to_specific_extrapolation: 15,
 } as const;
 
 const QUERY_LEVEL_FLAG_INDEX = -1;
+
+function detectClassToSpecificFlags(
+  _claims: ExtractedClaim[],
+  slots?: SearchSlots | null
+): EvidenceFlag[] {
+  const named = slots?.intervention?.trim();
+  const className = slots?.intervention_class?.trim();
+  if (!named || !className || named.toLowerCase() === className.toLowerCase()) {
+    return [];
+  }
+
+  return [
+    {
+      type: "class_to_specific_extrapolation",
+      claim_index: QUERY_LEVEL_FLAG_INDEX,
+      message: `The question names "${named}" specifically; the broader class is "${className}". Literature is searched at both grains. Class-level trials are related evidence, not automatic proof about this equipment or product form.`,
+      penalty: PENALTY.class_to_specific_extrapolation,
+    },
+  ];
+}
 
 const CAUSAL_FRAMING_PATTERN =
   /\b(causes?|prevents?|extends?|reduces?|improves?|improve|boosts?|boost|enhances?|enhance|increases?|increase|promotes?|promote|helps?|help|supports?|support|optimizes?|optimize|strengthens?|strengthen|lowers?|lower|raises?|raise)\b/i;
@@ -224,10 +245,12 @@ function detectFlagsWithEvidenceMap(
 export function detectFlags(
   claims: ExtractedClaim[],
   evidenceMap: EvidenceMapEntry[],
-  query?: string
+  query?: string,
+  slots?: SearchSlots | null
 ): EvidenceFlag[] {
+  const grainFlags = detectClassToSpecificFlags(claims, slots);
   if (!useEvidenceMap()) {
-    return detectFlagsFromClaimText(claims);
+    return [...detectFlagsFromClaimText(claims), ...grainFlags];
   }
-  return detectFlagsWithEvidenceMap(claims, evidenceMap, query);
+  return [...detectFlagsWithEvidenceMap(claims, evidenceMap, query), ...grainFlags];
 }

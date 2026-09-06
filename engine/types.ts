@@ -14,14 +14,25 @@ export type CertaintyLevel = "strong" | "moderate" | "speculative";
 
 export type QueryFrame = "question" | "marketing" | "claim";
 
+/** Named equipment/product vs the broader therapy or compound class. */
+export type InterventionGrain = "specific" | "class";
+
+/** Which synonym set to use when building a PubMed query from slots. */
+export type SearchGrain = InterventionGrain | "combined";
+
 /** Structured search slots parsed from the user question or a single claim. */
 export interface SearchSlots {
+  /** What the user named — e.g. "hyperbaric chamber". */
   intervention: string;
+  /** Broader therapy/compound class when distinct — e.g. "hyperbaric oxygen therapy". */
+  intervention_class?: string;
   outcomes: string[];
   population?: string;
   frame: QueryFrame;
   /** True when there is no specific health outcome (e.g. “feel better”). */
   outcome_is_broad: boolean;
+  /** When set, literature search uses only that grain's subject terms. */
+  search_grain?: SearchGrain;
 }
 
 export interface ExtractedClaim {
@@ -30,6 +41,8 @@ export interface ExtractedClaim {
   detected_certainty_level: CertaintyLevel;
   intervention?: string;
   outcome?: string;
+  /** specific = named equipment/product; class = broader therapy. */
+  grain?: InterventionGrain;
 }
 
 export type HumanHealthspanEvidence = "none" | "limited" | "moderate" | "strong";
@@ -59,7 +72,8 @@ export type EvidenceFlagType =
   | "unsupported_causal_framing"
   | "minor_certainty_inflation"
   | "intervention_not_in_evidence_map"
-  | "tangential_scope_match";
+  | "tangential_scope_match"
+  | "class_to_specific_extrapolation";
 
 export interface EvidenceFlag {
   type: EvidenceFlagType;
@@ -99,6 +113,10 @@ export interface PubMedSummary {
   meta_analysis_count: number;
   publication_volume_last_10_years: number;
   pubmed_query?: string;
+  specific_pubmed_query?: string;
+  specific_rct_count?: number;
+  specific_meta_analysis_count?: number;
+  intervention_class?: string;
 }
 
 /** Rolled-up literature counts across topic-level PubMed and per-claim searches. */
@@ -122,9 +140,13 @@ export interface LiteratureSummary {
   publication_volume_last_10_years: number;
   pubmed_query?: string;
   intervention?: string;
+  intervention_class?: string;
   outcomes?: string[];
   outcome_is_broad?: boolean;
   frame?: QueryFrame;
+  specific_pubmed_query?: string;
+  specific_rct_count?: number;
+  specific_meta_count?: number;
 }
 
 export interface ClaimPubMedData {
@@ -142,6 +164,7 @@ export interface Study {
   source: 'pubmed' | 'semantic_scholar';
   paperId?: string;
   pmid?: string;
+  grain?: InterventionGrain;
 }
 
 export interface ClaimStudyData {

@@ -7,23 +7,27 @@ import type { QueryFrame, SearchSlots } from "../types";
 import type { ModelRouter } from "../llm/model-router";
 import { PROMPT_VERSION } from "../prompts/registry";
 import { parseLlmJson } from "./llm-json";
-import { heuristicSearchSlots, sanitizeIntervention } from "@/lib/literature-query";
+import {
+  heuristicSearchSlots,
+  resolveInterventionClass,
+  sanitizeIntervention,
+} from "@/lib/literature-query";
 
 const PARSE_SYSTEM = `You extract literature-search slots from a user message about health, longevity, or biohacking.
 
-Ignore sales language (try our, guaranteed, buy now, product beds/devices as the thing itself).
-Identify the actual intervention (treatment, food, drug, practice) and specific health outcomes.
+Ignore sales language (try our, guaranteed, buy now). Keep the named equipment or product as the intervention when the user named one (chamber, bed, device, a specific tea). Also name the broader therapy or compound class when it is different.
 
 Rules:
-- intervention: short canonical name, e.g. "red light therapy", "jasmine tea", "metformin". Not the whole slogan.
+- intervention: what the user named, e.g. "hyperbaric chamber", "jasmine tea", "red light therapy bed" → "red light therapy". Not the whole slogan.
+- intervention_class: broader clinical class when distinct, e.g. hyperbaric chamber → "hyperbaric oxygen therapy"; jasmine tea → "green tea". Empty string if the named thing IS the class (metformin).
 - outcomes: specific measurable effects only, e.g. sleep, melatonin, anxiety, lifespan. Empty array if the pitch is only "feel better" / "wellbeing".
-- Do not put the intervention's own words (therapy, light, tea) in outcomes.
+- Do not put the intervention's own words (therapy, light, tea, chamber) in outcomes.
 - Do not use melatonin/caffeine as the intervention when they are the claimed effect of something else (e.g. red light → melatonin).
 - frame: "marketing" if it reads like ad copy; "question" if it is a question; "claim" otherwise.
 - population: optional (older adults, athletes). Empty string if unknown.
 
 Output ONLY a JSON object:
-{"intervention":"","outcomes":[],"population":"","frame":"question"}`;
+{"intervention":"","intervention_class":"","outcomes":[],"population":"","frame":"question"}`;
 
 function asFrame(value: unknown): QueryFrame {
   if (value === "marketing" || value === "question" || value === "claim") return value;
@@ -48,8 +52,15 @@ function slotsFromUnknown(raw: unknown): SearchSlots | null {
       ? record.population.trim()
       : undefined;
 
+  const parsedClass = sanitizeIntervention(String(record.intervention_class ?? ""));
+  const intervention_class =
+    parsedClass && parsedClass.toLowerCase() !== intervention.toLowerCase()
+      ? parsedClass
+      : resolveInterventionClass(intervention);
+
   return {
     intervention,
+    intervention_class,
     outcomes,
     population,
     frame: asFrame(record.frame),
@@ -62,9 +73,12 @@ function mergeSlots(llm: SearchSlots | null, fallback: SearchSlots): SearchSlots
 
   const intervention = llm.intervention || fallback.intervention;
   const outcomes = llm.outcomes.length > 0 ? llm.outcomes : fallback.outcomes;
+  const intervention_class =
+    llm.intervention_class || fallback.intervention_class || resolveInterventionClass(intervention);
 
   return {
     intervention,
+    intervention_class,
     outcomes,
     population: llm.population || fallback.population,
     frame: llm.frame === "claim" && fallback.frame === "marketing" ? "marketing" : llm.frame,
@@ -88,7 +102,7 @@ export async function parseSearchSlots(
     const parsed = slotsFromUnknown(parseLlmJson(out));
     const merged = mergeSlots(parsed, fallback);
     console.info(
-      `[EIE] query parse intervention="${merged.intervention}" outcomes=${JSON.stringify(merged.outcomes)} frame=${merged.frame} broad=${merged.outcome_is_broad}`
+      `[EIE] query parse intervention="${merged.intervention}" class="${merged.intervention_class ?? ""}" outcomes=${JSON.stringify(merged.outcomes)} frame=${merged.frame} broad=${merged.outcome_is_broad}`
     );
     return merged;
   } catch (err) {

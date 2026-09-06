@@ -2,7 +2,7 @@
  * Shared PubMed / literature search query building.
  */
 
-import type { SearchSlots } from "@/engine/types";
+import type { SearchGrain, SearchSlots } from "@/engine/types";
 
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
@@ -118,6 +118,85 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
   hbot: ["hyperbaric oxygen", "hyperbaric oxygen therapy", "hyperbaric chamber"],
 };
 
+/**
+ * Named equipment/product → broader therapy or compound class.
+ * Used so we can search and reason at both grains instead of collapsing one into the other.
+ */
+const INTERVENTION_CLASS: Record<string, string> = {
+  "hyperbaric chamber": "hyperbaric oxygen therapy",
+  "hyperbaric cabin": "hyperbaric oxygen therapy",
+  hbot: "hyperbaric oxygen therapy",
+  "jasmine tea": "green tea",
+  "red light therapy": "photobiomodulation",
+  "red light": "photobiomodulation",
+};
+
+/** Device/form terms that stay at the narrow grain (do not expand to the whole class). */
+const SPECIFIC_EQUIPMENT_TERMS: Record<string, string[]> = {
+  "hyperbaric chamber": [
+    "hyperbaric chamber",
+    "hyperbaric cabin",
+    "monoplace chamber",
+    "multiplace chamber",
+    "mild hyperbaric",
+  ],
+};
+
+export function resolveInterventionClass(intervention: string): string | undefined {
+  const normalized = intervention.toLowerCase().trim();
+  if (!normalized) return undefined;
+  if (INTERVENTION_CLASS[normalized]) {
+    const className = INTERVENTION_CLASS[normalized];
+    return className.toLowerCase() === normalized ? undefined : className;
+  }
+  for (const [key, className] of Object.entries(INTERVENTION_CLASS)) {
+    if (normalized.includes(key) && className.toLowerCase() !== normalized) {
+      return className;
+    }
+  }
+  return undefined;
+}
+
+export function hasDistinctInterventionClass(slots: SearchSlots | null | undefined): boolean {
+  const named = slots?.intervention?.trim().toLowerCase() ?? "";
+  const className = slots?.intervention_class?.trim().toLowerCase() ?? "";
+  return Boolean(named && className && named !== className);
+}
+
+export function getNarrowSearchTerms(intervention: string): string[] {
+  const normalized = intervention.toLowerCase().trim();
+  if (!normalized) return [];
+  for (const [key, terms] of Object.entries(SPECIFIC_EQUIPMENT_TERMS)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return [...new Set([normalized, ...terms])];
+    }
+  }
+  return [normalized];
+}
+
+function getClassSearchTerms(slots: SearchSlots): string[] {
+  const className = slots.intervention_class || slots.intervention;
+  const classTerms = getSubjectSearchTerms(className);
+  if (!hasDistinctInterventionClass(slots)) return classTerms;
+  const narrow = new Set(getNarrowSearchTerms(slots.intervention).map((term) => term.toLowerCase()));
+  const filtered = classTerms.filter((term) => !narrow.has(term.toLowerCase()));
+  return filtered.length > 0 ? filtered : classTerms;
+}
+
+function getCombinedSearchTerms(slots: SearchSlots): string[] {
+  return [...new Set([
+    ...getNarrowSearchTerms(slots.intervention),
+    ...getSubjectSearchTerms(slots.intervention),
+    ...(slots.intervention_class ? getSubjectSearchTerms(slots.intervention_class) : []),
+  ])];
+}
+
+export function termsForSearchGrain(slots: SearchSlots, grain: SearchGrain): string[] {
+  if (grain === "specific") return getNarrowSearchTerms(slots.intervention);
+  if (grain === "class") return getClassSearchTerms(slots);
+  return getCombinedSearchTerms(slots);
+}
+
 /** Consumer outcome phrases → terms papers actually use. */
 const OUTCOME_SYNONYMS: Record<string, string[]> = {
   "energy levels": ["fatigue", "energy"],
@@ -205,9 +284,7 @@ function getSubjectSearchTerms(subject: string): string[] {
   return [...terms];
 }
 
-/** Build a PubMed subject clause, OR-ing synonyms when helpful. */
-export function buildSubjectPubMedClause(subject: string): string {
-  const terms = getSubjectSearchTerms(subject);
+function buildTermsSubjectClause(terms: string[]): string {
   if (terms.length === 0) return "";
 
   const clauses = terms
@@ -219,8 +296,14 @@ export function buildSubjectPubMedClause(subject: string): string {
     .filter(Boolean);
 
   const unique = [...new Set(clauses)];
+  if (unique.length === 0) return "";
   if (unique.length === 1) return unique[0];
   return `(${unique.join(" OR ")})`;
+}
+
+/** Build a PubMed subject clause, OR-ing synonyms when helpful. */
+export function buildSubjectPubMedClause(subject: string): string {
+  return buildTermsSubjectClause(getSubjectSearchTerms(subject));
 }
 
 /**
@@ -379,8 +462,10 @@ export function heuristicSearchSlots(query: string): SearchSlots {
   const lower = query.toLowerCase();
   const marketing = /\b(try our|guaranteed|buy now|order now)\b/i.test(query);
   const question = /\?/.test(query) || /^(what|does|can|how|is|are|why)\b/i.test(lower.trim());
+  const intervention_class = resolveInterventionClass(intervention);
   return {
     intervention,
+    intervention_class,
     outcomes,
     frame: marketing ? "marketing" : question ? "question" : "claim",
     outcome_is_broad: outcomes.length === 0,
@@ -388,10 +473,16 @@ export function heuristicSearchSlots(query: string): SearchSlots {
 }
 
 export function claimToSearchSlots(
-  claim: { intervention?: string; outcome?: string },
+  claim: { intervention?: string; outcome?: string; grain?: "specific" | "class" },
   topic: SearchSlots
 ): SearchSlots {
-  const intervention = sanitizeIntervention(claim.intervention ?? "") || topic.intervention;
+  const grain = claim.grain;
+  const intervention =
+    grain === "class"
+      ? sanitizeIntervention(claim.intervention ?? "") ||
+        topic.intervention_class ||
+        topic.intervention
+      : sanitizeIntervention(claim.intervention ?? "") || topic.intervention;
   const outcome =
     claim.outcome && isSpecificOutcome(claim.outcome)
       ? claim.outcome.trim().toLowerCase()
@@ -399,10 +490,12 @@ export function claimToSearchSlots(
   const outcomes = outcome ? [outcome] : topic.outcomes;
   return {
     intervention,
+    intervention_class: topic.intervention_class || resolveInterventionClass(intervention),
     outcomes,
     population: topic.population,
     frame: topic.frame,
     outcome_is_broad: outcomes.length === 0,
+    search_grain: grain,
   };
 }
 
@@ -436,16 +529,19 @@ function expandOutcomesForPubMed(outcomes: string[]): string[] {
   return [...expanded];
 }
 
-export function buildPubMedQueryFromSlots(slots: SearchSlots): string {
+export function buildPubMedQueryFromSlots(
+  slots: SearchSlots,
+  grain: SearchGrain = slots.search_grain ?? "combined"
+): string {
   if (!slots.intervention) return "";
-  const subjectClause = buildSubjectPubMedClause(slots.intervention);
+  const subjectClause = buildTermsSubjectClause(termsForSearchGrain(slots, grain));
   const specificOutcomes = slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes);
   const outcomeClause = joinOrClauses(specificOutcomes.map((outcome) => quotePubMedPhrase(outcome)));
   return [subjectClause, outcomeClause].filter(Boolean).join(" AND ");
 }
 
-export function slotsToPlainQuery(slots: SearchSlots): string {
-  const subjects = getSubjectSearchTerms(slots.intervention).slice(0, 3);
+export function slotsToPlainQuery(slots: SearchSlots, grain: SearchGrain = slots.search_grain ?? "combined"): string {
+  const subjects = termsForSearchGrain(slots, grain).slice(0, grain === "specific" ? 3 : 4);
   const outcomes = slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes);
   return [...subjects, ...outcomes.slice(0, 3)].filter(Boolean).join(" ").trim();
 }
@@ -572,7 +668,8 @@ export function getClaimLiteratureMatchPlan(
   slots?: SearchSlots | null
 ): { subjects: string[]; outcomes: string[] } {
   if (slots?.intervention) {
-    const subjects = getSubjectSearchTerms(slots.intervention)
+    const grain: SearchGrain = slots.search_grain ?? "combined";
+    const subjects = termsForSearchGrain(slots, grain)
       .map((term) => term.toLowerCase())
       .filter(isUsableKeyword);
     const outcomes = (slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes))

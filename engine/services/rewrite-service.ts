@@ -2,9 +2,10 @@
  * Rewrite service: calibrate certainty and ordering to evidence strength.
  */
 
-import type { ExtractedClaim, EvidenceFlag, EvidenceMapEntry } from "../types";
+import type { ExtractedClaim, EvidenceFlag, EvidenceMapEntry, SearchSlots } from "../types";
 import type { ModelRouter } from "../llm/model-router";
 import { PROMPT_VERSION } from "../prompts/registry";
+import { buildRewriteGrounding } from "./answer-prompt";
 
 /**
  * Calculate evidence strength score for a claim (higher = stronger evidence).
@@ -139,7 +140,7 @@ function formatEvidenceContext(
     lines.push(`  Original position: ${index + 1}`);
     lines.push(`  Claim: "${claim.claim_text}"`);
     lines.push(
-      `  Type: ${claim.claim_type} | Certainty: ${claim.detected_certainty_level} | Evidence tier: ${intervention?.evidence_label || "unknown"}${hasFlags ? " | ⚠️ HAS FLAGS - MUST SOFTEN" : ""}`
+      `  Type: ${claim.claim_type} | Certainty: ${claim.detected_certainty_level} | Grain: ${claim.grain || "unspecified"} | Evidence tier: ${intervention?.evidence_label || "unknown"}${hasFlags ? " | ⚠️ HAS FLAGS - MUST SOFTEN" : ""}`
     );
     if (intervention) {
       lines.push(
@@ -182,7 +183,7 @@ CRITICAL RULES:
    - Say "consult a doctor" or "this is not medical advice"
    - Preserve the original order - you MUST reorder by evidence strength
 
-6. **PRESERVE**: Structure, helpfulness, and clarity - only adjust certainty, causal framing, order, and study type indicators.
+6. **PRESERVE**: Structure, helpfulness, and the user's named intervention. Only adjust certainty, causal framing, order, and study type indicators. If the user named specific equipment (e.g. a hyperbaric chamber) and the evidence is about a broader class (HBOT), keep BOTH in the rewritten answer and say which grain the evidence belongs to.
 
 7. **MAKE SIGNIFICANT CHANGES**: When flags are present, don't just add one "may" or "potentially" - substantially soften the claim.
 
@@ -193,10 +194,14 @@ export async function rewriteResponse(
   claims: ExtractedClaim[],
   flags: EvidenceFlag[],
   evidenceMap: EvidenceMapEntry[],
-  router: ModelRouter
+  router: ModelRouter,
+  grounding?: { query: string; slots?: SearchSlots | null }
 ): Promise<string> {
   const context = formatEvidenceContext(claims, flags, evidenceMap);
-  const userMessage = `Claims and evidence flags:\n${context}\n\nRaw response to rewrite:\n\n${rawResponse}`;
+  const grainNote = grounding
+    ? `${buildRewriteGrounding(grounding.query, grounding.slots)}\n\n`
+    : "";
+  const userMessage = `${grainNote}Claims and evidence flags:\n${context}\n\nRaw response to rewrite:\n\n${rawResponse}`;
   return router.complete({
     taskType: "rewrite",
     promptVersion: PROMPT_VERSION.rewrite_guarded,

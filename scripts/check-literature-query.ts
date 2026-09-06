@@ -6,8 +6,11 @@ import {
   buildPubMedQueryFromSlots,
   buildTopicPubMedQuery,
   extractPrimarySubject,
+  hasDistinctInterventionClass,
   heuristicSearchSlots,
+  resolveInterventionClass,
 } from "../lib/literature-query";
+import { buildRawAnswerUserMessage } from "../engine/services/answer-prompt";
 
 function assert(condition: unknown, message: string): void {
   if (!condition) {
@@ -129,12 +132,32 @@ assert(
   `HBOT heuristic outcomes ${hbotSlots.outcomes}`
 );
 
-const hbotFromSlots = buildPubMedQueryFromSlots({
+const hbotSlotsExact = {
   intervention: "hyperbaric chamber",
+  intervention_class: "hyperbaric oxygen therapy",
   outcomes: ["immune system", "energy levels", "collagen synthesis"],
-  frame: "claim",
+  frame: "claim" as const,
   outcome_is_broad: false,
-});
+};
+assert(resolveInterventionClass("hyperbaric chamber") === "hyperbaric oxygen therapy", "chamber class");
+assert(hasDistinctInterventionClass(hbotSlotsExact), "chamber has a distinct class");
+assert(hbotSlots.intervention_class === "hyperbaric oxygen therapy", "heuristic sets HBOT class");
+
+const hbotFromSlots = buildPubMedQueryFromSlots(hbotSlotsExact);
+const hbotClass = buildPubMedQueryFromSlots(hbotSlotsExact, "class");
+const hbotNarrow = buildPubMedQueryFromSlots(hbotSlotsExact, "specific");
+assertIncludes(hbotClass, "hbot", "class grain uses HBOT");
+assertIncludes(hbotClass, "hyperbaric oxygen", "class grain uses hyperbaric oxygen");
+assertNotIncludes(hbotClass, '"hyperbaric chamber"[tiab]', "class grain does not require the chamber phrase");
+assertIncludes(hbotNarrow, "hyperbaric chamber", "narrow grain keeps the chamber");
+assertIncludes(hbotNarrow, "mild hyperbaric", "narrow grain includes mild chambers");
+assertNotIncludes(hbotNarrow, "hbot[tiab]", "narrow grain does not expand to HBOT");
+assertNotIncludes(hbotNarrow, '"hyperbaric oxygen"[tiab]', "narrow grain does not expand to HBOT oxygen");
+
+const answerGrounding = buildRawAnswerUserMessage(hbotQuery, hbotSlotsExact);
+assertIncludes(answerGrounding, "hyperbaric chamber", "answer prompt keeps the chamber");
+assertIncludes(answerGrounding, "hyperbaric oxygen therapy", "answer prompt names the class");
+assertIncludes(answerGrounding, "both grains", "answer prompt asks for both grains");
 assertIncludes(hbotFromSlots, "hbot", "HBOT query uses HBOT acronym");
 assertIncludes(hbotFromSlots, "hyperbaric oxygen", "HBOT query uses hyperbaric oxygen");
 assertIncludes(hbotFromSlots, "fatigue", "energy levels maps to fatigue");
@@ -158,4 +181,6 @@ console.log("  redlight slots:", redlightSlots);
 console.log("  slot-driven claim:", slotDrivenClaim);
 console.log("  hbot slots:", hbotSlots);
 console.log("  hbot from slots:", hbotFromSlots);
+console.log("  hbot class:", hbotClass);
+console.log("  hbot narrow:", hbotNarrow);
 console.log("  hbot topic:", hbotTopic);

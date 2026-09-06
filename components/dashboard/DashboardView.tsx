@@ -295,6 +295,14 @@ function LinkedStudiesPanel({
                 <span style={{ textTransform: "capitalize" }}>
                   {study.source.replace("_", " ")}
                 </span>
+                {study.grain && (
+                  <>
+                    {" · "}
+                    <span style={{ fontWeight: 600, color: study.grain === "specific" ? "#1d4ed8" : "#0f766e" }}>
+                      {study.grain === "specific" ? "narrow match" : "class match"}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -369,6 +377,12 @@ function ClaimCard({
         letterSpacing: "0.05em"
       }}>
         {claim.claim_type} · {claim.detected_certainty_level}
+        {claim.grain && (
+          <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: claim.grain === "specific" ? "#1d4ed8" : "#0f766e" }}>
+            {" "}
+            · {claim.grain === "specific" ? "narrow (equipment/product)" : "broad (therapy class)"}
+          </span>
+        )}
         {(claim.intervention || claim.outcome) && (
           <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "#6b7280" }}>
             {" "}
@@ -1408,6 +1422,11 @@ export function DashboardView() {
                       {(result.literature_summary.intervention || result.query_parse?.intervention) && (
                         <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.4, color: "#1f2937" }}>
                           Parsed: {result.literature_summary.intervention || result.query_parse?.intervention}
+                          {(result.literature_summary.intervention_class || result.query_parse?.intervention_class) &&
+                          (result.literature_summary.intervention_class || result.query_parse?.intervention_class) !==
+                            (result.literature_summary.intervention || result.query_parse?.intervention)
+                            ? ` ⊂ ${result.literature_summary.intervention_class || result.query_parse?.intervention_class}`
+                            : ""}
                           {(result.literature_summary.outcomes?.length || result.query_parse?.outcomes?.length)
                             ? ` → ${(result.literature_summary.outcomes || result.query_parse?.outcomes || []).join(", ")}`
                             : result.literature_summary.outcome_is_broad
@@ -1416,9 +1435,22 @@ export function DashboardView() {
                           {result.query_parse?.frame === "marketing" ? " · marketing copy" : ""}
                         </p>
                       )}
+                      {typeof result.literature_summary.specific_rct_count === "number" && (
+                        <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.4, color: "#1f2937" }}>
+                          Broad ({result.literature_summary.intervention_class || "class"}): {result.literature_summary.pubmed_rct_pool} RCTs · {result.literature_summary.pubmed_meta_pool} meta
+                          {" · "}
+                          Narrow ({result.literature_summary.intervention || "named"}): {result.literature_summary.specific_rct_count} RCTs · {result.literature_summary.specific_meta_count ?? 0} meta
+                        </p>
+                      )}
                       {result.literature_summary.pubmed_query && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
-                          PubMed query: {result.literature_summary.pubmed_query}
+                          {result.literature_summary.specific_pubmed_query ? "Broad PubMed query: " : "PubMed query: "}
+                          {result.literature_summary.pubmed_query}
+                        </p>
+                      )}
+                      {result.literature_summary.specific_pubmed_query && (
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
+                          Narrow PubMed query: {result.literature_summary.specific_pubmed_query}
                         </p>
                       )}
                       <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>

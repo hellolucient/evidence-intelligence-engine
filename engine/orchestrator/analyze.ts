@@ -16,8 +16,9 @@ import { detectFlags } from "../services/policy-engine";
 import { computeCoherenceScore } from "../services/scoring-service";
 import { rewriteResponse } from "../services/rewrite-service";
 import { claimToSearchSlots } from "@/lib/literature-query";
+import { RAW_ANSWER_SYSTEM, buildRawAnswerUserMessage } from "../services/answer-prompt";
 
-const LONGIVITY_SYSTEM = `You are a helpful longevity and biohacking advisor. Answer the user's question based on current evidence. Be informative and concise.`;
+const LONGIVITY_SYSTEM = RAW_ANSWER_SYSTEM;
 
 const LONGEVITY_KEYWORDS = [
   "longevity",
@@ -144,24 +145,23 @@ export async function analyze(
     }
   }
 
-  const [raw_response, query_parse] = await Promise.all([
-    router.complete({
-      taskType: "raw_answer",
-      promptVersion: PROMPT_VERSION.raw_answer,
-      systemPrompt: LONGIVITY_SYSTEM,
-      userMessage: input.query,
-    }),
-    parseSearchSlots(input.query, router),
-  ]);
+  const query_parse = await parseSearchSlots(input.query, router);
+  const raw_response = await router.complete({
+    taskType: "raw_answer",
+    promptVersion: PROMPT_VERSION.raw_answer,
+    systemPrompt: LONGIVITY_SYSTEM,
+    userMessage: buildRawAnswerUserMessage(input.query, query_parse),
+  });
   const claims = await extractClaims(raw_response, router, query_parse);
-  const evidence_flags = detectFlags(claims, evidenceMap, input.query);
+  const evidence_flags = detectFlags(claims, evidenceMap, input.query, query_parse);
   const coherence_score = computeCoherenceScore(evidence_flags);
   const guarded_response = await rewriteResponse(
     raw_response,
     claims,
     evidence_flags,
     evidenceMap,
-    router
+    router,
+    { query: input.query, slots: query_parse }
   );
 
   let pubmed_summary: AnalyzeResponse["pubmed_summary"] = undefined;

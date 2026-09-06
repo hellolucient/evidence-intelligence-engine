@@ -7,11 +7,13 @@ import {
   buildClaimPubMedQuery,
   buildPlainLiteratureQuery,
   buildPlainTopicQuery,
+  buildPubMedQueryFromSlots,
   buildTopicPubMedQuery,
   getClaimLiteratureMatchPlan,
+  hasDistinctInterventionClass,
 } from "@/lib/literature-query";
 import { ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
-import type { SearchSlots } from "@/engine/types";
+import type { InterventionGrain, SearchSlots } from "@/engine/types";
 
 export interface Study {
   title: string;
@@ -22,6 +24,7 @@ export interface Study {
   source: 'pubmed' | 'semantic_scholar';
   paperId?: string; // For Semantic Scholar
   pmid?: string; // For PubMed
+  grain?: InterventionGrain;
 }
 
 export interface StudySearchResult {
@@ -238,18 +241,32 @@ export async function searchStudiesForTopic(
 ): Promise<StudySearchResult> {
   const pubmedTerm = buildTopicPubMedQuery(query, slots);
   const plainTerm = buildPlainTopicQuery(query, slots);
+  const specificTerm =
+    slots && hasDistinctInterventionClass(slots)
+      ? buildPubMedQueryFromSlots(slots, "specific")
+      : "";
 
   const semanticScholarKey = process.env.SEMANTIC_SCHOLAR_API_KEY;
 
   console.info(`[EIE] pubmed topic study search="${pubmedTerm}"`);
+  if (specificTerm) {
+    console.info(`[EIE] pubmed specific study search="${specificTerm}"`);
+  }
 
-  const [pubmedRCTs, semanticRCTs, metaAnalyses] = await Promise.all([
+  const [pubmedRCTs, semanticRCTs, metaAnalyses, specificRCTs] = await Promise.all([
     searchPubMedWithDetails(pubmedTerm, "rct"),
     searchSemanticScholar(plainTerm, semanticScholarKey),
     searchMetaAnalyses(pubmedTerm, plainTerm, semanticScholarKey),
+    specificTerm
+      ? searchPubMedWithDetails(specificTerm, "rct")
+      : Promise.resolve([] as Study[]),
   ]);
 
-  const allRCTs = [...pubmedRCTs, ...semanticRCTs];
+  const allRCTs = [
+    ...specificRCTs.map((study) => ({ ...study, grain: "specific" as const })),
+    ...pubmedRCTs.map((study) => ({ ...study, grain: "class" as const })),
+    ...semanticRCTs,
+  ];
   const uniqueRCTs: Study[] = [];
   const seenTitles = new Set<string>();
 

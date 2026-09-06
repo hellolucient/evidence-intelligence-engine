@@ -60,8 +60,12 @@ export function rollupLiterature(
     publication_volume_last_10_years: publicationVolume,
     pubmed_query: pubmedSummary?.pubmed_query,
     intervention: slots?.intervention,
+    intervention_class: slots?.intervention_class,
     outcomes: slots?.outcomes,
     outcome_is_broad: slots?.outcome_is_broad,
     frame: slots?.frame,
+    specific_pubmed_query: pubmedSummary?.specific_pubmed_query,
+    specific_rct_count: pubmedSummary?.specific_rct_count,
+    specific_meta_count: pubmedSummary?.specific_meta_analysis_count,
   };
 }
