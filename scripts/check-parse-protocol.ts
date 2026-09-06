@@ -10,6 +10,7 @@ import {
   proseCoversNamedObject,
 } from "../engine/services/parse-protocol";
 import { heuristicSearchSlots } from "../lib/literature-query";
+import { buildUserFindings } from "../engine/services/user-findings";
 import type { SearchSlots } from "../engine/types";
 
 function assert(condition: unknown, message: string): void {
@@ -123,6 +124,72 @@ assert(
     },
   ]) === 80,
   "ECS ignores class_to_specific_extrapolation"
+);
+
+const hbotFindings = buildUserFindings({
+  slots: restored,
+  literature: {
+    pubmed_rct_pool: 54,
+    pubmed_meta_pool: 9,
+    linked_papers_count: 24,
+    claims_searched: 15,
+    claims_with_matches: 14,
+    unique_claim_papers: 14,
+    linked_pubmed_count: 24,
+    linked_semantic_scholar_count: 0,
+    publication_volume_last_10_years: 0,
+    specific_rct_count: 4,
+  },
+  claimsCount: 6,
+});
+assert(
+  hbotFindings.some((line) => line.toLowerCase().includes("hyperbaric chamber")),
+  `findings mention the chamber: ${hbotFindings.join(" | ")}`
+);
+assert(
+  hbotFindings.some((line) => line.toLowerCase().includes("not automatic proof")),
+  "findings warn class ≠ equipment"
+);
+assert(
+  !hbotFindings.some((line) => line.includes("unsupported_causal") || line.includes("−20")),
+  "findings are not scoring flags"
+);
+
+const questionFindings = buildUserFindings({
+  slots: {
+    intervention: "metformin",
+    outcomes: ["lifespan"],
+    frame: "question",
+    outcome_is_broad: false,
+  },
+  claimsCount: 3,
+});
+assert(
+  questionFindings.some((line) => line.toLowerCase().includes("question, not a claim")),
+  "question input is labeled as inferred claims"
+);
+assert(
+  questionFindings.some((line) => line.toLowerCase().includes("not from pubmed")),
+  "question findings say claims are not from PubMed"
+);
+
+const marketingFindings = buildUserFindings({
+  slots: {
+    intervention: "hyperbaric chamber",
+    intervention_class: "hyperbaric oxygen therapy",
+    outcomes: ["energy"],
+    frame: "marketing",
+    outcome_is_broad: false,
+  },
+  claimsCount: 4,
+});
+assert(
+  marketingFindings.some((line) => line.toLowerCase().includes("inferred from the copy")),
+  "marketing findings say claims came from the copy"
+);
+assert(
+  !marketingFindings.some((line) => /unsupported_causal|−20|coherence/i.test(line)),
+  "marketing findings are not scoring flags"
 );
 
 console.log("parse-protocol checks passed");

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAnalysisState } from "@/lib/use-analysis-state";
+import { buildUserFindings } from "@/engine/services/user-findings";
 
 export function DemoApp() {
   const { query, setQuery, result, setResult } = useAnalysisState();
@@ -9,9 +10,19 @@ export function DemoApp() {
   const [error, setError] = useState<string | null>(null);
 
   const guardedResponse = result?.guarded_response ?? null;
-  const evidenceSummary = result
-    ? `Evidence Coherence Score: ${result.coherence_score}/100. ${result.claims?.length ?? 0} claims analyzed.`
-    : null;
+  const findings = result
+    ? buildUserFindings({
+        slots: result.query_parse,
+        literature: result.literature_summary,
+        claimsCount: result.claims?.length ?? 0,
+      })
+    : [];
+  const evidenceSummary =
+    findings.length > 0
+      ? findings.join(" ")
+      : result
+        ? `${result.claims?.length ?? 0} claims inferred from the generated answer.`
+        : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

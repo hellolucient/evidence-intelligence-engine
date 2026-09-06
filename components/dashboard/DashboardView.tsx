@@ -3,17 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAnalysisState } from "@/lib/use-analysis-state";
-import type { EvidenceFlag, ExtractedClaim, Study } from "@/engine/types";
-
-// Flag colors for visual matching
-const FLAG_COLORS = [
-  { bg: "#fef3c7", border: "#fde68a", text: "#92400e", dotColor: "#dc2626" }, // Red - vibrant red
-  { bg: "#dbeafe", border: "#93c5fd", text: "#1e40af", dotColor: "#f59e0b" }, // Orange - bright orange
-  { bg: "#fce7f3", border: "#f9a8d4", text: "#9f1239", dotColor: "#8b5cf6" }, // Purple - vibrant purple
-  { bg: "#e0e7ff", border: "#a5b4fc", text: "#3730a3", dotColor: "#2563eb" }, // Blue - bright blue
-  { bg: "#fef2f2", border: "#fecaca", text: "#991b1b", dotColor: "#ec4899" }, // Pink - vibrant pink
-  { bg: "#ecfdf5", border: "#86efac", text: "#065f46", dotColor: "#10b981" }, // Green - vibrant green
-];
+import type { ExtractedClaim, Study } from "@/engine/types";
+import { buildUserFindings } from "@/engine/services/user-findings";
 
 function truncateMiddle(value: string, head: number, tail: number): string {
   const s = value ?? "";
@@ -23,11 +14,10 @@ function truncateMiddle(value: string, head: number, tail: number): string {
 
 const ANALYSIS_STEPS = [
   "Understanding the question…",
-  "Generating AI response…",
+  "Generating a response…",
   "Extracting claims…",
-  "Checking evidence flags…",
-  "Searching PubMed literature…",
-  "Scoring evidence coherence…",
+  "Searching literature…",
+  "Calibrating the answer…",
 ];
 
 function AnalysisProgress({ active }: { active: boolean }) {
@@ -125,66 +115,6 @@ function AnalysisProgress({ active }: { active: boolean }) {
       </p>
     </div>
   );
-}
-
-/**
- * Insert flag markers into raw output text where flagged claims appear
- */
-function insertFlagMarkers(
-  rawText: string,
-  claims: ExtractedClaim[],
-  flags: EvidenceFlag[]
-): { text: string; flagPositions: Array<{ flagIndex: number; position: number }> } {
-  if (!flags.length || !claims.length) {
-    return { text: rawText, flagPositions: [] };
-  }
-
-  const flagPositions: Array<{ flagIndex: number; position: number }> = [];
-  let modifiedText = rawText;
-  let offset = 0;
-
-  // Sort flags by claim index to process in order
-  const sortedFlags = [...flags].sort((a, b) => a.claim_index - b.claim_index);
-
-  for (const flag of sortedFlags) {
-    if (flag.claim_index < 0) continue;
-
-    const claim = claims[flag.claim_index];
-    if (!claim) continue;
-
-    // Find where the claim text appears in raw output (fuzzy match)
-    const claimWords = claim.claim_text.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-    if (claimWords.length === 0) continue;
-
-    // Try to find a unique phrase from the claim in the raw text
-    let foundIndex = -1;
-    for (let i = 0; i < claimWords.length - 1; i++) {
-      const phrase = `${claimWords[i]} ${claimWords[i + 1]}`;
-      const searchIndex = modifiedText.toLowerCase().indexOf(phrase, offset);
-      if (searchIndex !== -1) {
-        foundIndex = searchIndex;
-        break;
-      }
-    }
-
-    // Fallback: search for first significant word
-    if (foundIndex === -1 && claimWords.length > 0) {
-      foundIndex = modifiedText.toLowerCase().indexOf(claimWords[0], offset);
-    }
-
-    if (foundIndex !== -1) {
-      const flagIndex = flags.indexOf(flag);
-      const color = FLAG_COLORS[flagIndex % FLAG_COLORS.length];
-      // Use consistent-sized dot with high-contrast color (no border)
-      const marker = ` <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${color.dotColor}; margin-right: 6px; vertical-align: middle;"></span>`;
-      
-      modifiedText = modifiedText.slice(0, foundIndex) + marker + modifiedText.slice(foundIndex);
-      flagPositions.push({ flagIndex, position: foundIndex });
-      offset = foundIndex + marker.length;
-    }
-  }
-
-  return { text: modifiedText, flagPositions };
 }
 
 function LinkedStudiesPanel({
@@ -551,13 +481,15 @@ export function DashboardView() {
   const [analysisIdWasManuallyEdited, setAnalysisIdWasManuallyEdited] = useState(false);
   const [showAnimocaTools, setShowAnimocaTools] = useState(false);
 
-  // Process raw output with flag markers
-  const rawOutputWithFlags = useMemo(() => {
-    if (!result?.raw_response || !result?.claims || !result?.evidence_flags) {
-      return { text: result?.raw_response || "", flagPositions: [] };
-    }
-    return insertFlagMarkers(result.raw_response, result.claims, result.evidence_flags);
-  }, [result]);
+  const userFindings = useMemo(
+    () =>
+      buildUserFindings({
+        slots: result?.query_parse,
+        literature: result?.literature_summary,
+        claimsCount: result?.claims?.length ?? 0,
+      }),
+    [result]
+  );
 
   async function runAnalysis(e: React.FormEvent) {
     e.preventDefault();
@@ -849,7 +781,7 @@ export function DashboardView() {
           Evidence Intelligence Dashboard
         </h1>
         <p style={{ color: "rgba(255,255,255,0.8)", fontSize: "1rem", margin: 0 }}>
-          Full transparency view: raw vs guarded output, claims, evidence flags, and coherence score
+          Full transparency view: raw vs guarded output, claims, and what the literature split means
         </p>
       </div>
 
@@ -1077,13 +1009,6 @@ export function DashboardView() {
                   <code>{truncateMiddle(currentPersistedAnalysis.analysis_id, 10, 10)}</code>
                   {" · "}
                   <span>{currentPersistedAnalysis.query_text || "(query unknown)"}</span>
-                  {" · "}
-                  <span>
-                    score:{" "}
-                    {typeof currentPersistedAnalysis.coherence_score === "number"
-                      ? currentPersistedAnalysis.coherence_score
-                      : "?"}
-                  </span>
                   {" · "}
                   <span>
                     created:{" "}
@@ -1400,7 +1325,7 @@ export function DashboardView() {
                 </p>
               </div>
             )}
-            {/* Score and metadata card */}
+            {/* Literature evidence and findings */}
             <div style={{
               padding: "1.5rem",
               background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
@@ -1410,24 +1335,6 @@ export function DashboardView() {
               boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
             }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: "3rem", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-                  <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
-                    Evidence Coherence Score
-                  </p>
-                  <p style={{ margin: "0.25rem 0 0 0", fontSize: "2rem", fontWeight: 800, background: result.coherence_score >= 80 ? "linear-gradient(135deg, #10b981 0%, #059669 100%)" : result.coherence_score >= 60 ? "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)" : "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", lineHeight: 1.2 }}>
-                    {result.coherence_score}/100
-                  </p>
-                </div>
-                {result.evidence_flags && result.evidence_flags.filter((flag) => flag.penalty > 0).length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-                    <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
-                      Flags Triggered
-                    </p>
-                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "1.5rem", fontWeight: 700, color: "#b45309", lineHeight: 1.2 }}>
-                      {result.evidence_flags.filter((flag) => flag.penalty > 0).length}
-                    </p>
-                  </div>
-                )}
                 {/* Literature evidence: combined rollup with topic vs claim breakdown */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
                   <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
@@ -1456,7 +1363,7 @@ export function DashboardView() {
                           {result.prose_repaired ? " · prose repaired to keep named object" : ""}
                         </p>
                       )}
-                      {result.query_parse?.parse_challenge && (
+                      {transparencyOn && result.query_parse?.parse_challenge && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.78rem", lineHeight: 1.4, color: "#4b5563" }}>
                           Parse challenge: {result.query_parse.parse_challenge}
                         </p>
@@ -1468,13 +1375,13 @@ export function DashboardView() {
                           Narrow ({result.literature_summary.intervention || "named"}): {result.literature_summary.specific_rct_count} RCTs · {result.literature_summary.specific_meta_count ?? 0} meta
                         </p>
                       )}
-                      {result.literature_summary.pubmed_query && (
+                      {transparencyOn && result.literature_summary.pubmed_query && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
                           {result.literature_summary.specific_pubmed_query ? "Broad PubMed query: " : "PubMed query: "}
                           {result.literature_summary.pubmed_query}
                         </p>
                       )}
-                      {result.literature_summary.specific_pubmed_query && (
+                      {transparencyOn && result.literature_summary.specific_pubmed_query && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
                           Narrow PubMed query: {result.literature_summary.specific_pubmed_query}
                         </p>
@@ -1492,6 +1399,21 @@ export function DashboardView() {
                       PubMed search did not run
                     </p>
                   )}
+                  {userFindings.length > 0 && (
+                    <div style={{ marginTop: "0.75rem" }}>
+                      <p style={{ margin: "0 0 0.35rem 0", fontSize: "0.75rem", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                        What this means
+                      </p>
+                      {userFindings.map((finding) => (
+                        <p
+                          key={finding}
+                          style={{ margin: "0.3rem 0 0 0", fontSize: "0.85rem", lineHeight: 1.5, color: "#1f2937" }}
+                        >
+                          {finding}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               {result.topic_study_data && result.topic_study_data.studies.length > 0 && (
@@ -1500,50 +1422,6 @@ export function DashboardView() {
                   pubmedRctPool={result.literature_summary?.pubmed_rct_pool}
                   pubmedMetaPool={result.literature_summary?.pubmed_meta_pool}
                 />
-              )}
-              {result.evidence_flags && result.evidence_flags.length > 0 && transparencyOn && (
-                <div style={{ marginTop: "1.5rem", paddingTop: "1.5rem", borderTop: "1px solid #e2e8f0" }}>
-                  <p style={{ margin: "0 0 0.75rem 0", fontSize: "0.875rem", fontWeight: 600, color: "#374151" }}>
-                    Evidence Flags:
-                  </p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    {result.evidence_flags.map((f, i) => {
-                      const color = FLAG_COLORS[i % FLAG_COLORS.length];
-                      return (
-                        <div key={i} style={{
-                          padding: "0.75rem 1rem",
-                          background: color.bg,
-                          border: `2px solid ${color.border}`,
-                          borderRadius: "8px",
-                          fontSize: "0.875rem",
-                          color: color.text,
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: "0.5rem"
-                        }}>
-                          <span style={{ 
-                            display: "inline-block", 
-                            width: "10px", 
-                            height: "10px", 
-                            borderRadius: "50%", 
-                            background: color.dotColor,
-                            marginRight: "0.5rem",
-                            flexShrink: 0
-                          }}></span>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontWeight: 700 }}>[{f.type}]</span>
-                            {f.penalty > 0 ? ` −${f.penalty}` : " · note"}: {f.message}
-                            {f.claim_index < 0 && (
-                              <span style={{ marginLeft: "0.5rem", fontSize: "0.8rem", color: "#6b7280" }}>
-                                (query scope)
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               )}
             </div>
 
@@ -1593,7 +1471,7 @@ export function DashboardView() {
                   Raw Output
                 </h2>
                 <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                  <div 
+                    <div 
                     style={{
                       whiteSpace: "pre-wrap",
                       fontFamily: "inherit",
@@ -1610,8 +1488,9 @@ export function DashboardView() {
                       color: "#374151",
                       minHeight: 0
                     }}
-                    dangerouslySetInnerHTML={{ __html: rawOutputWithFlags.text }}
-                  />
+                  >
+                    {result.raw_response}
+                  </div>
                 </div>
               </div>
 
@@ -1647,16 +1526,13 @@ export function DashboardView() {
                 {result.claims && result.claims.length > 0 ? (
                   <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0 }}>
                     {result.claims.map((c, i) => {
-                      const flagForClaim = result.evidence_flags?.find(f => f.claim_index === i);
-                      const flagIndex = flagForClaim ? result.evidence_flags!.indexOf(flagForClaim) : -1;
-                      const color = flagIndex >= 0 ? FLAG_COLORS[flagIndex % FLAG_COLORS.length] : null;
                       const claimStudyData = result.claim_study_data?.find(d => d.claim_index === i);
                       
                       return (
                         <ClaimCardWrapper
                           key={i}
                           claim={c}
-                          color={color}
+                          color={null}
                           studyData={claimStudyData}
                         />
                       );
