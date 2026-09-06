@@ -7,6 +7,8 @@ import type { QueryFrame, SearchSlots } from "../types";
 import type { ModelRouter } from "../llm/model-router";
 import { PROMPT_VERSION } from "../prompts/registry";
 import { parseLlmJson } from "./llm-json";
+import { challengeParse } from "./parse-critic";
+import { finalizeSearchSlots } from "./parse-protocol";
 import {
   heuristicSearchSlots,
   resolveInterventionClass,
@@ -90,7 +92,7 @@ export async function parseSearchSlots(
   query: string,
   router: ModelRouter
 ): Promise<SearchSlots> {
-  const fallback = heuristicSearchSlots(query);
+  const fallback = finalizeSearchSlots(query, heuristicSearchSlots(query));
 
   try {
     const out = await router.complete({
@@ -100,11 +102,12 @@ export async function parseSearchSlots(
       userMessage: `User message:\n${query}`,
     });
     const parsed = slotsFromUnknown(parseLlmJson(out));
-    const merged = mergeSlots(parsed, fallback);
+    const merged = finalizeSearchSlots(query, mergeSlots(parsed, fallback));
+    const challenged = await challengeParse(query, merged, router);
     console.info(
-      `[EIE] query parse intervention="${merged.intervention}" class="${merged.intervention_class ?? ""}" outcomes=${JSON.stringify(merged.outcomes)} frame=${merged.frame} broad=${merged.outcome_is_broad}`
+      `[EIE] query parse intervention="${challenged.intervention}" class="${challenged.intervention_class ?? ""}" kind="${challenged.object_kind ?? ""}" verdict="${challenged.critic_verdict ?? ""}" outcomes=${JSON.stringify(challenged.outcomes)} frame=${challenged.frame}`
     );
-    return merged;
+    return challenged;
   } catch (err) {
     console.error("[EIE] query parse failed, using heuristic slots:", err);
     return fallback;

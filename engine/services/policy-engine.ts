@@ -36,7 +36,7 @@ function detectClassToSpecificFlags(
       type: "class_to_specific_extrapolation",
       claim_index: QUERY_LEVEL_FLAG_INDEX,
       message: `The question names "${named}" specifically; the broader class is "${className}". Literature is searched at both grains. Class-level trials are related evidence, not automatic proof about this equipment or product form.`,
-      penalty: PENALTY.class_to_specific_extrapolation,
+      penalty: 0,
     },
   ];
 }

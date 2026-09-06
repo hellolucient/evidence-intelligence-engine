@@ -17,6 +17,7 @@ import { computeCoherenceScore } from "../services/scoring-service";
 import { rewriteResponse } from "../services/rewrite-service";
 import { claimToSearchSlots } from "@/lib/literature-query";
 import { RAW_ANSWER_SYSTEM, buildRawAnswerUserMessage } from "../services/answer-prompt";
+import { ensureNamedObjectInProse } from "../services/prose-repair";
 
 const LONGIVITY_SYSTEM = RAW_ANSWER_SYSTEM;
 
@@ -146,12 +147,18 @@ export async function analyze(
   }
 
   const query_parse = await parseSearchSlots(input.query, router);
-  const raw_response = await router.complete({
+  const generated = await router.complete({
     taskType: "raw_answer",
     promptVersion: PROMPT_VERSION.raw_answer,
     systemPrompt: LONGIVITY_SYSTEM,
     userMessage: buildRawAnswerUserMessage(input.query, query_parse),
   });
+  const { text: raw_response, repaired: prose_repaired } = await ensureNamedObjectInProse(
+    input.query,
+    query_parse,
+    generated,
+    router
+  );
   const claims = await extractClaims(raw_response, router, query_parse);
   const evidence_flags = detectFlags(claims, evidenceMap, input.query, query_parse);
   const coherence_score = computeCoherenceScore(evidence_flags);
@@ -243,6 +250,7 @@ export async function analyze(
     claim_pubmed_data,
     claim_study_data,
     topic_study_data,
+    prose_repaired,
   };
 }
 

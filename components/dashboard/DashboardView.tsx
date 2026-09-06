@@ -1381,6 +1381,25 @@ export function DashboardView() {
 
         {result && (
           <div style={{ marginTop: "2rem" }}>
+            {result.query_parse?.clarifying_question && (
+              <div style={{
+                marginBottom: "1rem",
+                padding: "1rem 1.25rem",
+                background: "#fffbeb",
+                border: "1px solid #f59e0b",
+                borderRadius: "12px",
+              }}>
+                <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  This split changes the evidence
+                </p>
+                <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.9rem", lineHeight: 1.5, color: "#78350f" }}>
+                  {result.query_parse.clarifying_question}
+                </p>
+                <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", color: "#a16207" }}>
+                  Analysis still ran both grains. Answering this would tighten which trials count as proof.
+                </p>
+              </div>
+            )}
             {/* Score and metadata card */}
             <div style={{
               padding: "1.5rem",
@@ -1399,13 +1418,13 @@ export function DashboardView() {
                     {result.coherence_score}/100
                   </p>
                 </div>
-                {result.evidence_flags && result.evidence_flags.length > 0 && (
+                {result.evidence_flags && result.evidence_flags.filter((flag) => flag.penalty > 0).length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
                     <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
                       Flags Triggered
                     </p>
                     <p style={{ margin: "0.25rem 0 0 0", fontSize: "1.5rem", fontWeight: 700, color: "#b45309", lineHeight: 1.2 }}>
-                      {result.evidence_flags.length}
+                      {result.evidence_flags.filter((flag) => flag.penalty > 0).length}
                     </p>
                   </div>
                 )}
@@ -1433,6 +1452,13 @@ export function DashboardView() {
                               ? " → (no specific outcome — counts are for the intervention overall)"
                               : ""}
                           {result.query_parse?.frame === "marketing" ? " · marketing copy" : ""}
+                          {result.query_parse?.object_kind ? ` · ${result.query_parse.object_kind}` : ""}
+                          {result.prose_repaired ? " · prose repaired to keep named object" : ""}
+                        </p>
+                      )}
+                      {result.query_parse?.parse_challenge && (
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.78rem", lineHeight: 1.4, color: "#4b5563" }}>
+                          Parse challenge: {result.query_parse.parse_challenge}
                         </p>
                       )}
                       {typeof result.literature_summary.specific_rct_count === "number" && (
@@ -1505,7 +1531,8 @@ export function DashboardView() {
                             flexShrink: 0
                           }}></span>
                           <div style={{ flex: 1 }}>
-                            <span style={{ fontWeight: 700 }}>[{f.type}]</span> −{f.penalty}: {f.message}
+                            <span style={{ fontWeight: 700 }}>[{f.type}]</span>
+                            {f.penalty > 0 ? ` −${f.penalty}` : " · note"}: {f.message}
                             {f.claim_index < 0 && (
                               <span style={{ marginLeft: "0.5rem", fontSize: "0.8rem", color: "#6b7280" }}>
                                 (query scope)

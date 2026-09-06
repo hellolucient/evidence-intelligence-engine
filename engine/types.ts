@@ -20,6 +20,10 @@ export type InterventionGrain = "specific" | "class";
 /** Which synonym set to use when building a PubMed query from slots. */
 export type SearchGrain = InterventionGrain | "combined";
 
+export type ObjectKind = "equipment" | "food" | "substance" | "protocol" | "class" | "other";
+
+export type CriticVerdict = "accept" | "revise" | "enforced";
+
 /** Structured search slots parsed from the user question or a single claim. */
 export interface SearchSlots {
   /** What the user named — e.g. "hyperbaric chamber". */
@@ -33,6 +37,13 @@ export interface SearchSlots {
   outcome_is_broad: boolean;
   /** When set, literature search uses only that grain's subject terms. */
   search_grain?: SearchGrain;
+  object_kind?: ObjectKind;
+  /** Nouns from the user text that must stay on the named intervention. */
+  protected_nouns?: string[];
+  /** Asked only when two interpretations would change which papers count. */
+  clarifying_question?: string;
+  parse_challenge?: string;
+  critic_verdict?: CriticVerdict;
 }
 
 export interface ExtractedClaim {
@@ -192,4 +203,6 @@ export interface AnalyzeResponse {
   claim_pubmed_data?: ClaimPubMedData[];
   claim_study_data?: ClaimStudyData[];
   topic_study_data?: TopicStudyData;
+  /** True when the raw answer omitted the named object and was repaired once. */
+  prose_repaired?: boolean;
 }
