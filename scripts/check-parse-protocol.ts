@@ -154,6 +154,14 @@ assert(
   !hbotFindings.some((line) => line.includes("unsupported_causal") || line.includes("−20")),
   "findings are not scoring flags"
 );
+assert(
+  hbotFindings.some((line) => /mild consumer chamber/.test(line.toLowerCase()) && /medical/.test(line.toLowerCase())),
+  `findings state medical vs mild chamber, got: ${hbotFindings.join(" | ")}`
+);
+assert(
+  !hbotFindings.some((line) => /both grains|this split/i.test(line)),
+  "findings do not use split/grains jargon"
+);
 
 const questionFindings = buildUserFindings({
   slots: {

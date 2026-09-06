@@ -6,6 +6,12 @@
 import type { LiteratureSummary, SearchSlots } from "../types";
 import { hasDistinctInterventionClass } from "@/lib/literature-query";
 
+function isHyperbaricEquipment(slots: SearchSlots): boolean {
+  const haystack = `${slots.intervention} ${slots.intervention_class ?? ""}`.toLowerCase();
+  const namesChamber = haystack.includes("chamber") || slots.object_kind === "equipment";
+  return namesChamber && /\b(hyperbaric|hbot)\b/.test(haystack);
+}
+
 export function buildUserFindings(input: {
   slots?: SearchSlots | null;
   literature?: LiteratureSummary | null;
@@ -27,6 +33,12 @@ export function buildUserFindings(input: {
   if (slots && hasDistinctInterventionClass(slots) && slots.intervention_class) {
     findings.push(
       `The input names "${slots.intervention}" specifically. Broader evidence is about "${slots.intervention_class}". Trials of the class are related, not automatic proof about this equipment or product form.`
+    );
+  }
+
+  if (slots && isHyperbaricEquipment(slots)) {
+    findings.push(
+      "A medical hyperbaric oxygen chamber (typically about 2 atmospheres of 100% oxygen) is not the same device as a mild consumer chamber. Most published trials are about the medical protocol."
     );
   }
 

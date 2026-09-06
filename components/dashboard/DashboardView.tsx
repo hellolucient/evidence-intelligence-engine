@@ -1306,25 +1306,6 @@ export function DashboardView() {
 
         {result && (
           <div style={{ marginTop: "2rem" }}>
-            {result.query_parse?.clarifying_question && (
-              <div style={{
-                marginBottom: "1rem",
-                padding: "1rem 1.25rem",
-                background: "#fffbeb",
-                border: "1px solid #f59e0b",
-                borderRadius: "12px",
-              }}>
-                <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  This split changes the evidence
-                </p>
-                <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.9rem", lineHeight: 1.5, color: "#78350f" }}>
-                  {result.query_parse.clarifying_question}
-                </p>
-                <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", color: "#a16207" }}>
-                  Analysis still ran both grains. Answering this would tighten which trials count as proof.
-                </p>
-              </div>
-            )}
             {/* Literature evidence and findings */}
             <div style={{
               padding: "1.5rem",
