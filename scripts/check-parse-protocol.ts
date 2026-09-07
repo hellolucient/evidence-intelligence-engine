@@ -97,6 +97,10 @@ const redlight = enforceProtectedNouns(redlightQuery, heuristicSearchSlots(redli
 assert(redlight.intervention.toLowerCase().includes("red light"), `redlight intervention ${redlight.intervention}`);
 assert(redlight.outcomes.includes("sleep"), `redlight outcomes ${redlight.outcomes}`);
 assert(!redlight.outcomes.includes("therapy"), "therapy is not an outcome");
+assert(
+  inferObjectKind("red light therapy for injury recovery", "red light therapy") === "equipment",
+  "red light therapy is equipment even without bed/panel"
+);
 
 const metformin = enforceProtectedNouns(
   "Does metformin extend lifespan?",

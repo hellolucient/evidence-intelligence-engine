@@ -206,6 +206,32 @@ assertIncludes(liverFlushTopic, "skin", "complexion maps to skin");
 assertNotIncludes(liverFlushTopic, "epsom salt olive oil", "do not glue recipe ingredients");
 assertNotIncludes(liverFlushTopic, "detoxification", "do not expand to generic detoxification");
 
+const injuryQuery = "red light therapy for injury recovery";
+assert(
+  extractPrimarySubject(injuryQuery).toLowerCase() === "red light therapy",
+  `injury-recovery subject must not swallow the outcome, got "${extractPrimarySubject(injuryQuery)}"`
+);
+const injurySlots = heuristicSearchSlots(injuryQuery);
+assert(
+  injurySlots.intervention.toLowerCase() === "red light therapy",
+  `injury-recovery intervention, got "${injurySlots.intervention}"`
+);
+assert(
+  injurySlots.outcomes.some((outcome) => /injury|wound/.test(outcome)),
+  `injury-recovery heuristic outcomes ${injurySlots.outcomes}`
+);
+const injuryTopic = buildTopicPubMedQuery(injuryQuery, {
+  intervention: "red light therapy",
+  intervention_class: "photobiomodulation",
+  outcomes: ["injury recovery"],
+  frame: "question",
+  outcome_is_broad: false,
+});
+assertIncludes(injuryTopic, "photobiomodulation", "injury-recovery keeps PBM class");
+assertIncludes(injuryTopic, "injury", "injury recovery maps to injury");
+assertIncludes(injuryTopic, "wound healing", "injury recovery maps to wound healing");
+assertNotIncludes(injuryTopic, '"injury recovery"[tiab]', "do not AND quoted consumer injury phrasing");
+
 console.log("literature-query checks passed");
 console.log("  tea topic:", teaTopic);
 console.log("  scent claim:", claimQuery);
@@ -221,3 +247,5 @@ console.log("  hbot narrow:", hbotNarrow);
 console.log("  hbot topic:", hbotTopic);
 console.log("  liver flush topic:", liverFlushTopic);
 console.log("  liver flush slots:", liverFlushSlots);
+console.log("  injury recovery topic:", injuryTopic);
+console.log("  injury recovery slots:", injurySlots);

@@ -16,11 +16,13 @@ const QUERY_NOISE_WORDS = new Set([
   "your", "their", "they", "them", "this", "that", "these", "those",
   "try", "our", "we", "us", "you", "youre", "guaranteed", "guarantee",
   "come", "please", "feel", "much", "better",
+  // "for" starts the outcome in "red light therapy for injury recovery"
+  "for",
 ]);
 
 /** Grammar words that must not become the PubMed subject and must not cut a phrase short. */
 const SUBJECT_FILLER_WORDS = new Set([
-  "the", "a", "an", "of", "for", "on", "in", "to", "with", "and", "or",
+  "the", "a", "an", "of", "on", "in", "to", "with", "and", "or",
   "vs", "versus", "about", "by", "as",
 ]);
 
@@ -303,6 +305,10 @@ const OUTCOME_SYNONYMS: Record<string, string[]> = {
   "skin glow": ["skin", "collagen"],
   complexion: ["skin"],
   "skin complexion": ["skin", "complexion"],
+  "injury recovery": ["injury", "wound healing"],
+  "recovery from injury": ["injury", "wound healing"],
+  "recover from injury": ["injury", "wound healing"],
+  injuries: ["injury", "wound healing"],
 };
 
 /** Too vague to AND into a PubMed query — they match almost the entire medical literature. */
@@ -515,6 +521,9 @@ const HEALTH_OUTCOME_TERMS = [
   "skin complexion",
   "complexion",
   "skin",
+  "injury recovery",
+  "wound healing",
+  "injury",
 ];
 
 const VAGUE_HEALTH_OUTCOMES = new Set(["health", "wellbeing", "well-being"]);

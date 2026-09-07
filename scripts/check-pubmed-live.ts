@@ -152,6 +152,41 @@ async function main(): Promise<void> {
     `HBOT query should use literature synonyms: ${hbotTopic}`
   );
 
+  const injurySlots = {
+    intervention: "red light therapy",
+    intervention_class: "photobiomodulation",
+    outcomes: ["injury recovery"],
+    frame: "question" as const,
+    outcome_is_broad: false,
+  };
+  const injuryTopic = buildPubMedQueryFromSlots(injurySlots);
+  const brokenInjury = `(photobiomodulation[tiab] OR "red light"[tiab]) AND "injury recovery"[tiab]`;
+  const [injuryRctCount, brokenInjuryRctCount] = await Promise.all([
+    ncbiEsearchCount(`(${injuryTopic}) AND randomized controlled trial[pt]`),
+    ncbiEsearchCount(`(${brokenInjury}) AND randomized controlled trial[pt]`),
+  ]);
+
+  assert(
+    !injuryTopic.includes('"injury recovery"[tiab]'),
+    `injury recovery must map off the consumer phrase: ${injuryTopic}`
+  );
+  assert(
+    injuryTopic.toLowerCase().includes("injury") && injuryTopic.toLowerCase().includes("wound healing"),
+    `injury recovery should search injury/wound healing: ${injuryTopic}`
+  );
+  assert(
+    brokenInjuryRctCount === 0,
+    `sanity: quoted injury recovery should still be 0 RCTs, got ${brokenInjuryRctCount}`
+  );
+  assert(
+    injuryRctCount > 0,
+    `expected PBM + injury/wound RCTs > 0, got ${injuryRctCount} for ${injuryTopic}`
+  );
+  assert(
+    injuryRctCount < 400,
+    `PBM + injury query looks like the whole PBM field: ${injuryRctCount}`
+  );
+
   console.log("pubmed live checks passed");
 }
 

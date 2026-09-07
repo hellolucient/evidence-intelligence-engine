@@ -60,6 +60,7 @@ export function extractProtectedNouns(query: string): string[] {
 export function inferObjectKind(query: string, intervention: string): ObjectKind {
   const haystack = `${query} ${intervention}`.toLowerCase();
   if ([...EQUIPMENT_TOKENS].some((token) => haystack.includes(token))) return "equipment";
+  if (/\b(red light|photobiomodulation|light therapy)\b/i.test(haystack)) return "equipment";
   if (/\b(flush|cleanse|colonic|enema)\b/i.test(haystack)) return "protocol";
   if ([...FORM_TOKENS].some((token) => haystack.includes(token))) return "food";
   if (/\b(fast|fasting|diet|protocol|training|workout)\b/i.test(haystack)) return "protocol";

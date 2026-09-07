@@ -33,7 +33,7 @@ That is an algorithm. The little parse/search tweaks are training data for it. K
 
 ## Outcomes
 
-Map consumer phrasing before AND-ing (`energy levels` → fatigue; `skin complexion` → skin). Quote-ANDing two marketing phrases is how we get silent zeros.
+Map consumer phrasing before AND-ing (`energy levels` → fatigue; `skin complexion` → skin; `injury recovery` → injury / wound healing). Quote-ANDing two marketing phrases is how we get silent zeros.
 
 ## What the UI should say
 
