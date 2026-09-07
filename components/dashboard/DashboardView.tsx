@@ -519,7 +519,7 @@ export function DashboardView() {
   const { query, setQuery, result, setResult } = useAnalysisState();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [transparencyOn, setTransparencyOn] = useState(true);
+  const [transparencyOff, setTransparencyOff] = useState(false);
   const [menuDescriptions, setMenuDescriptions] = useState<string[] | null>(null);
   const [menuLoading, setMenuLoading] = useState(false);
   const [productDescriptions, setProductDescriptions] = useState<string[] | null>(null);
@@ -837,15 +837,12 @@ export function DashboardView() {
         <h1 style={{ 
           fontSize: "2.5rem", 
           fontWeight: 800, 
-          marginBottom: "0.5rem",
+          margin: 0,
           color: "#ffffff",
           textShadow: "0 2px 20px rgba(255,255,255,0.1)"
         }}>
           Evidence Intelligence Dashboard
         </h1>
-        <p style={{ color: "rgba(255,255,255,0.8)", fontSize: "1rem", margin: 0 }}>
-          Full transparency view: raw vs guarded output, claims, and what the literature split means
-        </p>
       </div>
 
       {/* Main Card */}
@@ -996,17 +993,6 @@ export function DashboardView() {
             </p>
           )}
 
-          <div style={{ display: "flex", alignItems: "center", gap: "1.5rem", flexWrap: "wrap", marginTop: "1.5rem" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", color: "#374151" }}>
-              <input
-                type="checkbox"
-                checked={transparencyOn}
-                onChange={(e) => setTransparencyOn(e.target.checked)}
-                style={{ width: "18px", height: "18px", cursor: "pointer" }}
-              />
-              Transparency ON
-            </label>
-          </div>
         </form>
 
         {/* Operator: Animoca email workflow (persisted analysis) — hidden by default */}
@@ -1384,16 +1370,27 @@ export function DashboardView() {
             }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: "3rem", flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
                 {/* Literature evidence: combined rollup with topic vs claim breakdown */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, maxWidth: "100%" }}>
-                  <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
-                    Literature Evidence
-                  </p>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, maxWidth: "100%", width: "100%" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", width: "100%", minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
+                      Literature Evidence
+                    </p>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, color: "#2563eb", flexShrink: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={transparencyOff}
+                        onChange={(e) => setTransparencyOff(e.target.checked)}
+                        style={{ width: "16px", height: "16px", cursor: "pointer" }}
+                      />
+                      Transparency OFF
+                    </label>
+                  </div>
                   {result.literature_summary ? (
                     <>
                       <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.95rem", fontWeight: 700, lineHeight: 1.3, color: "#111827" }}>
                         {result.literature_summary.pubmed_rct_pool} PubMed RCTs · {result.literature_summary.pubmed_meta_pool} PubMed meta-analyses · {result.literature_summary.linked_papers_count} papers linked
                       </p>
-                      {transparencyOn && (result.literature_summary.intervention || result.query_parse?.intervention) && (
+                      {!transparencyOff && (result.literature_summary.intervention || result.query_parse?.intervention) && (
                         <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.4, color: "#1f2937" }}>
                           Parsed: {result.literature_summary.intervention || result.query_parse?.intervention}
                           {(result.literature_summary.intervention_class || result.query_parse?.intervention_class) &&
@@ -1411,30 +1408,30 @@ export function DashboardView() {
                           {result.prose_repaired ? " · prose repaired to keep named object" : ""}
                         </p>
                       )}
-                      {transparencyOn && result.query_parse?.parse_challenge && (
+                      {!transparencyOff && result.query_parse?.parse_challenge && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.78rem", lineHeight: 1.4, color: "#4b5563" }}>
                           Parse challenge: {result.query_parse.parse_challenge}
                         </p>
                       )}
-                      {typeof result.literature_summary.specific_rct_count === "number" && (
+                      {!transparencyOff && typeof result.literature_summary.specific_rct_count === "number" && (
                         <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.4, color: "#1f2937" }}>
                           Broad ({result.literature_summary.intervention_class || "class"}): {result.literature_summary.pubmed_rct_pool} RCTs · {result.literature_summary.pubmed_meta_pool} meta
                           {" · "}
                           Narrow ({result.literature_summary.intervention || "named"}): {result.literature_summary.specific_rct_count} RCTs · {result.literature_summary.specific_meta_count ?? 0} meta
                         </p>
                       )}
-                      {transparencyOn && result.literature_summary.pubmed_query && (
+                      {!transparencyOff && result.literature_summary.pubmed_query && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
                           {result.literature_summary.specific_pubmed_query ? "Broad PubMed query: " : "PubMed query: "}
                           {result.literature_summary.pubmed_query}
                         </p>
                       )}
-                      {transparencyOn && result.literature_summary.specific_pubmed_query && (
+                      {!transparencyOff && result.literature_summary.specific_pubmed_query && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
                           Narrow PubMed query: {result.literature_summary.specific_pubmed_query}
                         </p>
                       )}
-                      {transparencyOn && result.literature_summary.protocol_pubmed_query && (
+                      {!transparencyOff && result.literature_summary.protocol_pubmed_query && (
                         <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
                           Protocol papers query: {result.literature_summary.protocol_pubmed_query}
                           {typeof result.literature_summary.protocol_paper_count === "number"
@@ -1442,7 +1439,7 @@ export function DashboardView() {
                             : ""}
                         </p>
                       )}
-                      {transparencyOn && (
+                      {!transparencyOff && (
                       <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>
                         {result.literature_summary.linked_pubmed_count ?? 0} from PubMed · {result.literature_summary.linked_semantic_scholar_count ?? 0} from Semantic Scholar · {result.literature_summary.claims_with_matches} of {result.literature_summary.claims_searched} claims matched specific papers
                       </p>

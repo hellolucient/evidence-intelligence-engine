@@ -39,6 +39,7 @@ Map consumer phrasing before AND-ing (`energy levels` → fatigue; `skin complex
 
 - No 0–100 score. No flag chips.
 - **What this means** is the user-facing algorithm output. It is the takeaway: first on the page, visually distinct from PubMed queries and parse metadata.
+- Parse/query strings live in Literature Evidence and are hidden by **Transparency OFF** (unchecked by default, so details show). The control sits on that card, not in the header.
 - Do not ask clarifying questions the UI cannot answer.
 
 ## When you change a rule
