@@ -12,6 +12,62 @@ function truncateMiddle(value: string, head: number, tail: number): string {
   return `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
+function TakeawayCard({ findings }: { findings: string[] }) {
+  if (findings.length === 0) return null;
+  const [lead, ...rest] = findings;
+  return (
+    <div
+      style={{
+        marginBottom: "1.25rem",
+        padding: "1.35rem 1.5rem",
+        borderRadius: "16px",
+        background: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 55%, #ecfdf5 100%)",
+        border: "1px solid #f59e0b",
+        boxShadow: "0 8px 24px rgba(180, 83, 9, 0.12)",
+        minWidth: 0,
+        maxWidth: "100%",
+      }}
+    >
+      <p
+        style={{
+          margin: 0,
+          fontSize: "0.72rem",
+          fontWeight: 800,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "#92400e",
+        }}
+      >
+        What this means
+      </p>
+      <p
+        style={{
+          margin: "0.55rem 0 0 0",
+          fontSize: "1.2rem",
+          fontWeight: 700,
+          lineHeight: 1.45,
+          color: "#111827",
+        }}
+      >
+        {lead}
+      </p>
+      {rest.map((finding) => (
+        <p
+          key={finding}
+          style={{
+            margin: "0.65rem 0 0 0",
+            fontSize: "0.95rem",
+            lineHeight: 1.55,
+            color: "#374151",
+          }}
+        >
+          {finding}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 const ANALYSIS_STEPS = [
   "Understanding the question…",
   "Generating a response…",
@@ -1313,7 +1369,8 @@ export function DashboardView() {
 
         {result && (
           <div style={{ marginTop: "2rem" }}>
-            {/* Literature evidence and findings */}
+            <TakeawayCard findings={userFindings} />
+            {/* Literature evidence */}
             <div style={{
               padding: "1.5rem",
               background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
@@ -1336,7 +1393,7 @@ export function DashboardView() {
                       <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.95rem", fontWeight: 700, lineHeight: 1.3, color: "#111827" }}>
                         {result.literature_summary.pubmed_rct_pool} PubMed RCTs · {result.literature_summary.pubmed_meta_pool} PubMed meta-analyses · {result.literature_summary.linked_papers_count} papers linked
                       </p>
-                      {(result.literature_summary.intervention || result.query_parse?.intervention) && (
+                      {transparencyOn && (result.literature_summary.intervention || result.query_parse?.intervention) && (
                         <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.4, color: "#1f2937" }}>
                           Parsed: {result.literature_summary.intervention || result.query_parse?.intervention}
                           {(result.literature_summary.intervention_class || result.query_parse?.intervention_class) &&
@@ -1385,9 +1442,11 @@ export function DashboardView() {
                             : ""}
                         </p>
                       )}
+                      {transparencyOn && (
                       <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>
                         {result.literature_summary.linked_pubmed_count ?? 0} from PubMed · {result.literature_summary.linked_semantic_scholar_count ?? 0} from Semantic Scholar · {result.literature_summary.claims_with_matches} of {result.literature_summary.claims_searched} claims matched specific papers
                       </p>
+                      )}
                     </>
                   ) : result.pubmed_summary ? (
                     <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.9rem", fontWeight: 600, lineHeight: 1.2 }}>
@@ -1397,21 +1456,6 @@ export function DashboardView() {
                     <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.9rem", fontWeight: 600, lineHeight: 1.2 }}>
                       PubMed search did not run
                     </p>
-                  )}
-                  {userFindings.length > 0 && (
-                    <div style={{ marginTop: "0.75rem" }}>
-                      <p style={{ margin: "0 0 0.35rem 0", fontSize: "0.75rem", fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                        What this means
-                      </p>
-                      {userFindings.map((finding) => (
-                        <p
-                          key={finding}
-                          style={{ margin: "0.3rem 0 0 0", fontSize: "0.85rem", lineHeight: 1.5, color: "#1f2937" }}
-                        >
-                          {finding}
-                        </p>
-                      ))}
-                    </div>
                   )}
                 </div>
               </div>

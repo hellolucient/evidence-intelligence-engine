@@ -10,7 +10,7 @@ import {
   proseCoversNamedObject,
 } from "../engine/services/parse-protocol";
 import { heuristicSearchSlots } from "../lib/literature-query";
-import { buildUserFindings } from "../engine/services/user-findings";
+import { buildUserFindings, formatOutcomeForProse } from "../engine/services/user-findings";
 import type { SearchSlots } from "../engine/types";
 
 function assert(condition: unknown, message: string): void {
@@ -221,8 +221,43 @@ const liverFlushFindings = buildUserFindings({
   claimsCount: 3,
 });
 assert(
+  formatOutcomeForProse("improve skin complexion") === "skin complexion",
+  "strip leading improve from outcome prose"
+);
+assert(
   liverFlushFindings.some((line) => line.toLowerCase().includes("almost no evidence")),
   `folk findings name the empty complexion evidence: ${liverFlushFindings.join(" | ")}`
+);
+assert(
+  liverFlushFindings[0].toLowerCase().includes("almost no evidence"),
+  "the takeaway lead is the complexion answer, not context"
+);
+const doubledOutcomeFindings = buildUserFindings({
+  slots: {
+    ...liverFlushSlots,
+    outcomes: ["improve skin complexion"],
+  },
+  literature: {
+    pubmed_rct_pool: 0,
+    pubmed_meta_pool: 0,
+    linked_papers_count: 3,
+    claims_searched: 1,
+    claims_with_matches: 0,
+    unique_claim_papers: 0,
+    linked_pubmed_count: 3,
+    linked_semantic_scholar_count: 0,
+    publication_volume_last_10_years: 0,
+    protocol_paper_count: 3,
+  },
+  claimsCount: 1,
+});
+assert(
+  doubledOutcomeFindings[0].includes("improves skin complexion"),
+  `stripped verb: ${doubledOutcomeFindings[0]}`
+);
+assert(
+  !doubledOutcomeFindings.some((line) => /improves improve/i.test(line)),
+  "no doubled improve"
 );
 assert(
   liverFlushFindings.some((line) => line.toLowerCase().includes("liver flush")),

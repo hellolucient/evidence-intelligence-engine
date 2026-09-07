@@ -38,7 +38,7 @@ Map consumer phrasing before AND-ing (`energy levels` → fatigue; `skin complex
 ## What the UI should say
 
 - No 0–100 score. No flag chips.
-- **What this means** is the user-facing algorithm output.
+- **What this means** is the user-facing algorithm output. It is the takeaway: first on the page, visually distinct from PubMed queries and parse metadata.
 - Do not ask clarifying questions the UI cannot answer.
 
 ## When you change a rule

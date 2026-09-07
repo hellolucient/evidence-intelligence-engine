@@ -17,12 +17,7 @@ export function DemoApp() {
         claimsCount: result.claims?.length ?? 0,
       })
     : [];
-  const evidenceSummary =
-    findings.length > 0
-      ? findings.join(" ")
-      : result
-        ? `${result.claims?.length ?? 0} claims inferred from the generated answer.`
-        : null;
+  const [takeawayLead, ...takeawayRest] = findings;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -195,20 +190,57 @@ export function DemoApp() {
             }}>
               {guardedResponse}
             </div>
-            {evidenceSummary && (
+            {(takeawayLead || result) && (
               <div style={{
                 marginTop: "1.5rem",
                 paddingTop: "1.5rem",
                 borderTop: "2px solid #86efac"
               }}>
-                <p style={{
-                  margin: 0,
-                  fontSize: "0.875rem",
-                  color: "#065f46",
-                  fontWeight: 600
-                }}>
-                  {evidenceSummary}
-                </p>
+                {takeawayLead ? (
+                  <>
+                    <p style={{
+                      margin: 0,
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "#065f46",
+                    }}>
+                      What this means
+                    </p>
+                    <p style={{
+                      margin: "0.45rem 0 0 0",
+                      fontSize: "1.05rem",
+                      color: "#064e3b",
+                      fontWeight: 700,
+                      lineHeight: 1.5,
+                    }}>
+                      {takeawayLead}
+                    </p>
+                    {takeawayRest.map((finding) => (
+                      <p
+                        key={finding}
+                        style={{
+                          margin: "0.5rem 0 0 0",
+                          fontSize: "0.9rem",
+                          color: "#065f46",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {finding}
+                      </p>
+                    ))}
+                  </>
+                ) : (
+                  <p style={{
+                    margin: 0,
+                    fontSize: "0.875rem",
+                    color: "#065f46",
+                    fontWeight: 600
+                  }}>
+                    {`${result?.claims?.length ?? 0} claims inferred from the generated answer.`}
+                  </p>
+                )}
               </div>
             )}
           </div>
