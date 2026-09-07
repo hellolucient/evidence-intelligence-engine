@@ -116,6 +116,9 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
     "hbot",
   ],
   hbot: ["hyperbaric oxygen", "hyperbaric oxygen therapy", "hyperbaric chamber"],
+  "liver flush": ["liver cleanse", "gallbladder flush", "gallbladder cleanse"],
+  "liver cleanse": ["liver flush", "gallbladder flush", "gallbladder cleanse"],
+  "colon cleanse": ["colon flush", "colonic irrigation"],
 };
 
 /**
@@ -130,6 +133,91 @@ const INTERVENTION_CLASS: Record<string, string> = {
   "red light therapy": "photobiomodulation",
   "red light": "photobiomodulation",
 };
+
+type FolkProtocol = {
+  name: string;
+  synonyms: string[];
+  /** High-precision PubMed phrases. Bare "liver flush" matches transplant flush solutions. */
+  searchTerms: string[];
+  forbiddenClasses: string[];
+};
+
+const FOLK_PROTOCOLS: FolkProtocol[] = [
+  {
+    name: "liver flush",
+    synonyms: ["liver flush", "liver cleanse", "gallbladder flush", "gallbladder cleanse", "liver detox"],
+    searchTerms: ["gallbladder flush", "liver and gallbladder flush"],
+    forbiddenClasses: ["detoxification", "detox", "detoxification therapy"],
+  },
+  {
+    name: "colon cleanse",
+    synonyms: ["colon cleanse", "colon flush", "colonic irrigation"],
+    searchTerms: ["colon cleanse", "colonic irrigation", "coffee enema"],
+    forbiddenClasses: ["detoxification", "detox"],
+  },
+];
+
+const RECIPE_INGREDIENTS = ["epsom salt", "olive oil", "lemon juice", "grapefruit", "apple juice", "coffee"];
+
+function haystackHasPhrase(haystack: string, phrase: string): boolean {
+  return haystack.includes(phrase);
+}
+
+export function detectFolkProtocol(text: string): FolkProtocol | undefined {
+  const haystack = normalizeQueryText(text).toLowerCase();
+  let best: FolkProtocol | undefined;
+  let bestLen = 0;
+  for (const protocol of FOLK_PROTOCOLS) {
+    for (const synonym of [protocol.name, ...protocol.synonyms]) {
+      if (haystackHasPhrase(haystack, synonym) && synonym.length > bestLen) {
+        best = protocol;
+        bestLen = synonym.length;
+      }
+    }
+  }
+  return best;
+}
+
+export function isFolkProtocol(slots: SearchSlots | null | undefined): boolean {
+  if (!slots) return false;
+  if (slots.object_kind === "protocol" && detectFolkProtocol(slots.intervention)) return true;
+  return Boolean(detectFolkProtocol(`${slots.intervention} ${slots.intervention_class ?? ""}`));
+}
+
+export function extractRecipeIngredients(query: string): string[] {
+  const haystack = normalizeQueryText(query).toLowerCase();
+  return RECIPE_INGREDIENTS.filter((ingredient) => haystack.includes(ingredient));
+}
+
+/** Folk recipes search the protocol, not glued ingredients and not generic "detoxification". */
+export function applyFolkProtocol(query: string, slots: SearchSlots): SearchSlots {
+  const folk = detectFolkProtocol(`${query} ${slots.intervention} ${slots.intervention_class ?? ""}`);
+  if (!folk) return slots;
+  const className = (slots.intervention_class ?? "").toLowerCase().trim();
+  const classIsForbidden =
+    !className ||
+    className === folk.name ||
+    folk.forbiddenClasses.some((item) => className === item || className.includes(item));
+  return {
+    ...slots,
+    intervention: folk.name,
+    intervention_class: classIsForbidden ? undefined : undefined,
+    object_kind: "protocol",
+    recipe_ingredients: slots.recipe_ingredients?.length
+      ? slots.recipe_ingredients
+      : extractRecipeIngredients(query),
+    search_grain: undefined,
+  };
+}
+
+export function buildProtocolOnlyPubMedQuery(slots: SearchSlots): string {
+  return buildPubMedQueryFromSlots({
+    ...slots,
+    outcomes: [],
+    outcome_is_broad: true,
+    search_grain: "combined",
+  });
+}
 
 /** Device/form terms that stay at the narrow grain (do not expand to the whole class). */
 const SPECIFIC_EQUIPMENT_TERMS: Record<string, string[]> = {
@@ -158,12 +246,15 @@ export function resolveInterventionClass(intervention: string): string | undefin
 }
 
 export function hasDistinctInterventionClass(slots: SearchSlots | null | undefined): boolean {
+  if (isFolkProtocol(slots)) return false;
   const named = slots?.intervention?.trim().toLowerCase() ?? "";
   const className = slots?.intervention_class?.trim().toLowerCase() ?? "";
   return Boolean(named && className && named !== className);
 }
 
 export function getNarrowSearchTerms(intervention: string): string[] {
+  const folk = detectFolkProtocol(intervention) || FOLK_PROTOCOLS.find((protocol) => protocol.name === intervention.toLowerCase().trim());
+  if (folk) return [...folk.searchTerms];
   const normalized = intervention.toLowerCase().trim();
   if (!normalized) return [];
   for (const [key, terms] of Object.entries(SPECIFIC_EQUIPMENT_TERMS)) {
@@ -210,6 +301,8 @@ const OUTCOME_SYNONYMS: Record<string, string[]> = {
   "collagen synthesis": ["collagen"],
   collagen: ["collagen"],
   "skin glow": ["skin", "collagen"],
+  complexion: ["skin"],
+  "skin complexion": ["skin", "complexion"],
 };
 
 /** Too vague to AND into a PubMed query — they match almost the entire medical literature. */
@@ -248,6 +341,11 @@ export function normalizeQueryText(text: string): string {
 function getSubjectSearchTerms(subject: string): string[] {
   const normalized = subject.toLowerCase().trim();
   if (!normalized) return [];
+
+  const folk = detectFolkProtocol(normalized) || FOLK_PROTOCOLS.find((protocol) => protocol.name === normalized);
+  if (folk) {
+    return [...new Set(folk.searchTerms)];
+  }
 
   const terms = new Set<string>([normalized]);
 
@@ -311,6 +409,9 @@ export function buildSubjectPubMedClause(subject: string): string {
  * e.g. "jasmine tea will improve your sleep" -> "jasmine tea"
  */
 export function extractPrimarySubject(query: string): string {
+  const folk = detectFolkProtocol(query);
+  if (folk) return folk.name;
+
   const words = normalizeQueryText(query)
     .replace(/\?/g, "")
     .trim()
@@ -411,6 +512,9 @@ const HEALTH_OUTCOME_TERMS = [
   "collagen",
   "aging",
   "fatigue",
+  "skin complexion",
+  "complexion",
+  "skin",
 ];
 
 const VAGUE_HEALTH_OUTCOMES = new Set(["health", "wellbeing", "well-being"]);
@@ -463,13 +567,14 @@ export function heuristicSearchSlots(query: string): SearchSlots {
   const marketing = /\b(try our|guaranteed|buy now|order now)\b/i.test(query);
   const question = /\?/.test(query) || /^(what|does|can|how|is|are|why)\b/i.test(lower.trim());
   const intervention_class = resolveInterventionClass(intervention);
-  return {
+  const base: SearchSlots = {
     intervention,
     intervention_class,
     outcomes,
     frame: marketing ? "marketing" : question ? "question" : "claim",
     outcome_is_broad: outcomes.length === 0,
   };
+  return applyFolkProtocol(query, base);
 }
 
 export function claimToSearchSlots(
@@ -488,7 +593,7 @@ export function claimToSearchSlots(
       ? claim.outcome.trim().toLowerCase()
       : undefined;
   const outcomes = outcome ? [outcome] : topic.outcomes;
-  return {
+  const next: SearchSlots = {
     intervention,
     intervention_class: topic.intervention_class || resolveInterventionClass(intervention),
     outcomes,
@@ -496,7 +601,10 @@ export function claimToSearchSlots(
     frame: topic.frame,
     outcome_is_broad: outcomes.length === 0,
     search_grain: grain,
+    object_kind: topic.object_kind,
+    recipe_ingredients: topic.recipe_ingredients,
   };
+  return applyFolkProtocol(`${topic.intervention} ${claim.intervention ?? ""}`, next);
 }
 
 function lookupOutcomeSynonyms(outcome: string): string[] | undefined {

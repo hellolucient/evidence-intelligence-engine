@@ -171,6 +171,41 @@ const hbotTopic = buildTopicPubMedQuery(hbotQuery);
 assertIncludes(hbotTopic, "hbot", "HBOT topic from raw misspelled query");
 assertIncludes(hbotTopic, "hyperbaric oxygen", "HBOT topic synonyms");
 
+const liverFlushQuery =
+  "epsom salt and olive oil liver flush will improve your skin complexion";
+assert(
+  extractPrimarySubject(liverFlushQuery).toLowerCase() === "liver flush",
+  `liver flush subject, got "${extractPrimarySubject(liverFlushQuery)}"`
+);
+const liverFlushSlots = heuristicSearchSlots(liverFlushQuery);
+assert(
+  liverFlushSlots.intervention.toLowerCase() === "liver flush",
+  `liver flush intervention, got "${liverFlushSlots.intervention}"`
+);
+assert(liverFlushSlots.object_kind === "protocol", "liver flush is a folk protocol");
+assert(
+  !hasDistinctInterventionClass(liverFlushSlots),
+  "liver flush must not dual-grain into detoxification"
+);
+assert(
+  (liverFlushSlots.recipe_ingredients || []).includes("epsom salt"),
+  `recipe ingredients ${liverFlushSlots.recipe_ingredients}`
+);
+assert(
+  (liverFlushSlots.recipe_ingredients || []).includes("olive oil"),
+  "olive oil stays a recipe ingredient"
+);
+assert(
+  liverFlushSlots.outcomes.some((outcome) => /skin|complexion/.test(outcome)),
+  `liver flush outcomes ${liverFlushSlots.outcomes}`
+);
+const liverFlushTopic = buildTopicPubMedQuery(liverFlushQuery, liverFlushSlots);
+assertIncludes(liverFlushTopic, "gallbladder flush", "folk protocol searches the wellness practice");
+assertNotIncludes(liverFlushTopic, '"liver flush"[tiab]', "bare liver flush matches transplant flush solutions");
+assertIncludes(liverFlushTopic, "skin", "complexion maps to skin");
+assertNotIncludes(liverFlushTopic, "epsom salt olive oil", "do not glue recipe ingredients");
+assertNotIncludes(liverFlushTopic, "detoxification", "do not expand to generic detoxification");
+
 console.log("literature-query checks passed");
 console.log("  tea topic:", teaTopic);
 console.log("  scent claim:", claimQuery);
@@ -184,3 +219,5 @@ console.log("  hbot from slots:", hbotFromSlots);
 console.log("  hbot class:", hbotClass);
 console.log("  hbot narrow:", hbotNarrow);
 console.log("  hbot topic:", hbotTopic);
+console.log("  liver flush topic:", liverFlushTopic);
+console.log("  liver flush slots:", liverFlushSlots);

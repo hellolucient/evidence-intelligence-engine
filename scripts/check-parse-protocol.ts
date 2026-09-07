@@ -200,6 +200,39 @@ assert(
   "marketing findings are not scoring flags"
 );
 
+const liverFlushSlots = heuristicSearchSlots(
+  "epsom salt and olive oil liver flush will improve your skin complexion"
+);
+assert(liverFlushSlots.intervention === "liver flush", `folk parse ${liverFlushSlots.intervention}`);
+const liverFlushFindings = buildUserFindings({
+  slots: liverFlushSlots,
+  literature: {
+    pubmed_rct_pool: 0,
+    pubmed_meta_pool: 0,
+    linked_papers_count: 8,
+    claims_searched: 3,
+    claims_with_matches: 0,
+    unique_claim_papers: 0,
+    linked_pubmed_count: 8,
+    linked_semantic_scholar_count: 0,
+    publication_volume_last_10_years: 0,
+    protocol_paper_count: 8,
+  },
+  claimsCount: 3,
+});
+assert(
+  liverFlushFindings.some((line) => line.toLowerCase().includes("almost no evidence")),
+  `folk findings name the empty complexion evidence: ${liverFlushFindings.join(" | ")}`
+);
+assert(
+  liverFlushFindings.some((line) => line.toLowerCase().includes("liver flush")),
+  "folk findings keep the protocol name"
+);
+assert(
+  !liverFlushFindings.some((line) => /equipment or product form/i.test(line)),
+  "folk findings are not the chamber dual-grain copy"
+);
+
 console.log("parse-protocol checks passed");
 console.log("  hbot restored:", restored.intervention, "⊂", restored.intervention_class);
 console.log("  clarifying:", restored.clarifying_question);

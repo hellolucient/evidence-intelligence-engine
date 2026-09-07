@@ -7,12 +7,14 @@ import {
   buildClaimPubMedQuery,
   buildPlainLiteratureQuery,
   buildPlainTopicQuery,
+  buildProtocolOnlyPubMedQuery,
   buildPubMedQueryFromSlots,
   buildTopicPubMedQuery,
   getClaimLiteratureMatchPlan,
   hasDistinctInterventionClass,
+  isFolkProtocol,
 } from "@/lib/literature-query";
-import { ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
+import { briefAbstractSummary, ncbiEfetchAbstracts, ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
 import type { InterventionGrain, SearchSlots } from "@/engine/types";
 
 export interface Study {
@@ -25,6 +27,7 @@ export interface Study {
   paperId?: string; // For Semantic Scholar
   pmid?: string; // For PubMed
   grain?: InterventionGrain;
+  summary?: string;
 }
 
 export interface StudySearchResult {
@@ -163,6 +166,43 @@ async function searchPubMedWithDetails(
   }
 }
 
+async function searchPubMedAnyWithSummaries(query: string, retmax = 12): Promise<Study[]> {
+  try {
+    const { ids } = await ncbiEsearch(query, retmax);
+    if (ids.length === 0) return [];
+    const [papers, abstracts] = await Promise.all([
+      ncbiEsummary(ids),
+      ncbiEfetchAbstracts(ids),
+    ]);
+    const out: Study[] = [];
+    for (const paper of papers) {
+      if (typeof paper.title !== "string" || typeof paper.uid !== "string") continue;
+      const summary = abstracts[paper.uid]
+        ? briefAbstractSummary(abstracts[paper.uid])
+        : undefined;
+      out.push({
+        title: paper.title || "",
+        authors: (paper.authors || [])
+          .slice(0, 3)
+          .map((a) => a.name || "")
+          .filter((n) => n.length > 0),
+        year: paper.pubdate
+          ? parseInt(paper.pubdate.split(" ")[0] ?? "", 10) || undefined
+          : undefined,
+        journal: paper.source,
+        url: `https://pubmed.ncbi.nlm.nih.gov/${paper.uid}/`,
+        source: "pubmed" as const,
+        pmid: paper.uid,
+        summary: summary || undefined,
+      });
+    }
+    return out;
+  } catch (err) {
+    console.error("[EIE] PubMed protocol paper search failed:", err);
+    return [];
+  }
+}
+
 /**
  * Search for meta-analyses
  */
@@ -251,6 +291,21 @@ export async function searchStudiesForTopic(
   console.info(`[EIE] pubmed topic study search="${pubmedTerm}"`);
   if (specificTerm) {
     console.info(`[EIE] pubmed specific study search="${specificTerm}"`);
+  }
+
+  if (slots && isFolkProtocol(slots)) {
+    const protocolQuery = buildProtocolOnlyPubMedQuery(slots);
+    console.info(`[EIE] pubmed protocol-any search="${protocolQuery}"`);
+    const [askedRcts, protocolPapers, metaAnalyses] = await Promise.all([
+      searchPubMedWithDetails(pubmedTerm, "rct"),
+      protocolQuery ? searchPubMedAnyWithSummaries(protocolQuery, 12) : Promise.resolve([] as Study[]),
+      searchMetaAnalyses(pubmedTerm, plainTerm, semanticScholarKey),
+    ]);
+    return {
+      rct_count: askedRcts.length,
+      meta_analysis_count: metaAnalyses.length,
+      studies: protocolPapers.length > 0 ? protocolPapers : [...askedRcts, ...metaAnalyses].slice(0, 12),
+    };
   }
 
   const [pubmedRCTs, semanticRCTs, metaAnalyses, specificRCTs] = await Promise.all([

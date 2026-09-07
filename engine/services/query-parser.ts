@@ -21,6 +21,8 @@ Ignore sales language (try our, guaranteed, buy now). Keep the named equipment o
 
 Rules:
 - intervention: what the user named, e.g. "hyperbaric chamber", "jasmine tea", "red light therapy bed" → "red light therapy". Not the whole slogan.
+- If they named a folk protocol (liver flush, colon cleanse) plus recipe ingredients (epsom salt, olive oil), intervention is the PROTOCOL ("liver flush"), not the glued ingredients. Do not set intervention_class to generic "detoxification".
+- intervention_class: broader clinical class when distinct, e.g. hyperbaric chamber → "hyperbaric oxygen therapy"; jasmine tea → "green tea". Empty string if the named thing IS the class (metformin) or the class would be a vague bucket like detoxification.
 - intervention_class: broader clinical class when distinct, e.g. hyperbaric chamber → "hyperbaric oxygen therapy"; jasmine tea → "green tea". Empty string if the named thing IS the class (metformin).
 - outcomes: specific measurable effects only, e.g. sleep, melatonin, anxiety, lifespan. Empty array if the pitch is only "feel better" / "wellbeing".
 - Do not put the intervention's own words (therapy, light, tea, chamber) in outcomes.

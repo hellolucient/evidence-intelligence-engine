@@ -13,7 +13,9 @@ export const CRITIC_MAX_ROUNDS = 2;
 
 const CRITIC_SYSTEM = `You challenge a literature-search parse of a health or longevity user message.
 
-The parse must keep the thing the user NAMED (equipment, food, product form). You may ADD a broader clinical class. You must not REPLACE the named object with the class or an acronym.
+The parse must keep the thing the user NAMED (equipment, food, product form, or folk protocol such as a liver flush). You may ADD a broader clinical class. You must not REPLACE the named object with the class or an acronym.
+
+For folk protocols (liver flush, colon cleanse), intervention is the protocol name. Do not replace it with "detoxification". Recipe ingredients stay secondary.
 
 Protected nouns are listed in the user message. Every protected noun must remain inside "intervention".
 

@@ -3,7 +3,7 @@
  */
 
 import type { SearchSlots } from "../types";
-import { hasDistinctInterventionClass } from "@/lib/literature-query";
+import { hasDistinctInterventionClass, isFolkProtocol } from "@/lib/literature-query";
 
 export const RAW_ANSWER_SYSTEM = `You are a helpful longevity and biohacking advisor. Answer the user's question based on current evidence. Be informative and concise.
 
@@ -26,6 +26,14 @@ export function buildRawAnswerUserMessage(query: string, slots: SearchSlots): st
   }
   if (slots.outcomes.length > 0) {
     lines.push(`Outcomes to address: ${slots.outcomes.join(", ")}`);
+  }
+  if (isFolkProtocol(slots)) {
+    const ingredients = slots.recipe_ingredients?.length
+      ? slots.recipe_ingredients.join(", ")
+      : "the named ingredients";
+    lines.push(
+      `This is a folk protocol. Answer whether ${slots.intervention} improves ${slots.outcomes.join(", ") || "the claimed outcome"}. Do not treat trials of ${ingredients} for other uses as evidence that a ${slots.intervention} works. If papers discuss ${slots.intervention}s at all, summarize what they actually found (including harms or "not evidence-based").`
+    );
   }
   return lines.join("\n");
 }

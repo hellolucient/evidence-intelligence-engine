@@ -67,5 +67,11 @@ export function rollupLiterature(
     specific_pubmed_query: pubmedSummary?.specific_pubmed_query,
     specific_rct_count: pubmedSummary?.specific_rct_count,
     specific_meta_count: pubmedSummary?.specific_meta_analysis_count,
+    protocol_pubmed_query: pubmedSummary?.protocol_pubmed_query,
+    protocol_paper_count:
+      pubmedSummary?.protocol_paper_count ??
+      (topicStudyData?.studies.length && pubmedSummary?.protocol_pubmed_query
+        ? topicStudyData.studies.length
+        : undefined),
   };
 }

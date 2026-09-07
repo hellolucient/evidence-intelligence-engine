@@ -121,10 +121,12 @@ function LinkedStudiesPanel({
   studies,
   pubmedRctPool,
   pubmedMetaPool,
+  heading,
 }: {
   studies: Study[];
   pubmedRctPool?: number;
   pubmedMetaPool?: number;
+  heading?: string;
 }) {
   const [expanded, setExpanded] = useState(true);
   if (studies.length === 0) return null;
@@ -144,7 +146,7 @@ function LinkedStudiesPanel({
         marginBottom: "0.75rem",
       }}>
         <p style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600, color: "#374151" }}>
-          Linked Studies ({studies.length})
+          {heading || `Linked Studies (${studies.length})`}
         </p>
         <p style={{ margin: 0, fontSize: "0.78rem", color: "#6b7280" }}>
           Showing {studies.length} linked paper{studies.length !== 1 ? "s" : ""}
@@ -234,6 +236,11 @@ function LinkedStudiesPanel({
                   </>
                 )}
               </div>
+              {study.summary && (
+                <p style={{ margin: "0.45rem 0 0 0", fontSize: "0.8rem", lineHeight: 1.5, color: "#374151" }}>
+                  {study.summary}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -1313,11 +1320,14 @@ export function DashboardView() {
               borderRadius: "16px",
               marginBottom: "1.5rem",
               border: "1px solid #e2e8f0",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+              boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+              minWidth: 0,
+              maxWidth: "100%",
+              overflow: "hidden"
             }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: "3rem", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "3rem", flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
                 {/* Literature evidence: combined rollup with topic vs claim breakdown */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, maxWidth: "100%" }}>
                   <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
                     Literature Evidence
                   </p>
@@ -1367,6 +1377,14 @@ export function DashboardView() {
                           Narrow PubMed query: {result.literature_summary.specific_pubmed_query}
                         </p>
                       )}
+                      {transparencyOn && result.literature_summary.protocol_pubmed_query && (
+                        <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.72rem", fontWeight: 500, lineHeight: 1.45, color: "#6b7280", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", wordBreak: "break-word" }}>
+                          Protocol papers query: {result.literature_summary.protocol_pubmed_query}
+                          {typeof result.literature_summary.protocol_paper_count === "number"
+                            ? ` · ${result.literature_summary.protocol_paper_count} papers`
+                            : ""}
+                        </p>
+                      )}
                       <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.78rem", fontWeight: 500, lineHeight: 1.4, color: "#6b7280" }}>
                         {result.literature_summary.linked_pubmed_count ?? 0} from PubMed · {result.literature_summary.linked_semantic_scholar_count ?? 0} from Semantic Scholar · {result.literature_summary.claims_with_matches} of {result.literature_summary.claims_searched} claims matched specific papers
                       </p>
@@ -1402,32 +1420,20 @@ export function DashboardView() {
                   studies={result.topic_study_data.studies}
                   pubmedRctPool={result.literature_summary?.pubmed_rct_pool}
                   pubmedMetaPool={result.literature_summary?.pubmed_meta_pool}
+                  heading={
+                    result.query_parse?.object_kind === "protocol" && result.query_parse.intervention
+                      ? `Papers on ${result.query_parse.intervention} (${result.topic_study_data.studies.length})`
+                      : undefined
+                  }
                 />
               )}
             </div>
 
-            {/* Three panels landscape layout */}
-            <div style={{ 
-              display: "flex", 
-              gap: "1rem", 
-              flexWrap: "nowrap", 
-              width: "100%", 
-              overflowX: "auto",
-              overflowY: "hidden",
-              boxSizing: "border-box",
-              paddingBottom: "0.5rem"
-            }}
-            onScroll={(e) => {
-              // Smooth scrolling
-              e.currentTarget.style.scrollBehavior = "smooth";
-            }}
-            >
+            <div className="eie-results-grid">
               {/* Panel 1: Raw Output */}
-              <div style={{
-                flex: "0 0 auto",
-                width: "calc(33.33% - 0.67rem)",
-                minWidth: "400px",
-                maxWidth: "600px",
+              <div
+                className="eie-result-panel"
+                style={{
                 padding: "1.5rem",
                 border: "2px solid #c7d2fe",
                 borderRadius: "16px",
@@ -1452,7 +1458,8 @@ export function DashboardView() {
                   Raw Output
                 </h2>
                 <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                    <div 
+                    <div
+                    className="eie-wrap-text"
                     style={{
                       whiteSpace: "pre-wrap",
                       fontFamily: "inherit",
@@ -1476,11 +1483,9 @@ export function DashboardView() {
               </div>
 
               {/* Panel 2: Claims Extracted */}
-              <div style={{
-                flex: "0 0 auto",
-                width: "calc(33.33% - 0.67rem)",
-                minWidth: "400px",
-                maxWidth: "600px",
+              <div
+                className="eie-result-panel"
+                style={{
                 padding: "1.5rem",
                 border: "2px solid #fed7aa",
                 borderRadius: "16px",
@@ -1527,11 +1532,9 @@ export function DashboardView() {
               </div>
 
               {/* Panel 3: Guarded Output */}
-              <div style={{
-                flex: "0 0 auto",
-                width: "calc(33.33% - 0.67rem)",
-                minWidth: "400px",
-                maxWidth: "600px",
+              <div
+                className="eie-result-panel"
+                style={{
                 padding: "1.5rem",
                 border: "2px solid #10b981",
                 borderRadius: "16px",
@@ -1558,7 +1561,9 @@ export function DashboardView() {
                   Guarded Output
                 </h2>
                 <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
-                  <pre style={{
+                  <pre
+                    className="eie-wrap-text"
+                    style={{
                     whiteSpace: "pre-wrap",
                     fontFamily: "inherit",
                     margin: 0,

@@ -179,3 +179,70 @@ export async function ncbiEsummary(
     return papers;
   });
 }
+
+async function fetchNcbiText(url: string): Promise<string> {
+  const maxAttempts = 4;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (res.status === 429 || res.status >= 500) {
+        lastError = new Error(`NCBI HTTP ${res.status}`);
+        await sleep(1000 * 2 ** attempt);
+        continue;
+      }
+      if (!res.ok) {
+        throw new Error(`NCBI HTTP ${res.status}`);
+      }
+      return await res.text();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const retryable =
+        /HTTP 429|HTTP 5|rate limit|ECONNRESET|ETIMEDOUT|fetch failed/i.test(
+          lastError.message
+        );
+      if (!retryable || attempt === maxAttempts - 1) throw lastError;
+      await sleep(1000 * 2 ** attempt);
+    }
+  }
+
+  throw lastError ?? new Error("NCBI request failed");
+}
+
+export function parseMedlineAbstracts(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const records = text.split(/\n(?=PMID- )/);
+  for (const record of records) {
+    const pmid = record.match(/PMID-\s*(\d+)/)?.[1];
+    if (!pmid) continue;
+    const abMatch = record.match(/\nAB\s+-\s+([\s\S]*?)(?=\n[A-Z]{2,4}\s+-|\s*$)/);
+    if (!abMatch?.[1]) continue;
+    out[pmid] = abMatch[1].replace(/\n\s+/g, " ").replace(/\s+/g, " ").trim();
+  }
+  return out;
+}
+
+export function briefAbstractSummary(abstract: string, maxChars = 420): string {
+  const cleaned = abstract.replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).slice(0, 2);
+  let out = sentences.join(" ");
+  if (out.length > maxChars) out = `${out.slice(0, maxChars - 1)}…`;
+  return out;
+}
+
+export async function ncbiEfetchAbstracts(
+  ids: string[]
+): Promise<Record<string, string>> {
+  if (ids.length === 0) return {};
+  return enqueue(async () => {
+    const params = ncbiAuthParams();
+    params.set("db", "pubmed");
+    params.set("id", ids.join(","));
+    params.set("rettype", "medline");
+    params.set("retmode", "text");
+    const text = await fetchNcbiText(`${BASE}/efetch.fcgi?${params.toString()}`);
+    return parseMedlineAbstracts(text);
+  });
+}

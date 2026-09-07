@@ -44,6 +44,8 @@ export interface SearchSlots {
   clarifying_question?: string;
   parse_challenge?: string;
   critic_verdict?: CriticVerdict;
+  /** Ingredients named in a folk recipe (epsom salt, olive oil) — not the PubMed subject. */
+  recipe_ingredients?: string[];
 }
 
 export interface ExtractedClaim {
@@ -128,6 +130,8 @@ export interface PubMedSummary {
   specific_rct_count?: number;
   specific_meta_analysis_count?: number;
   intervention_class?: string;
+  protocol_pubmed_query?: string;
+  protocol_paper_count?: number;
 }
 
 /** Rolled-up literature counts across topic-level PubMed and per-claim searches. */
@@ -158,6 +162,9 @@ export interface LiteratureSummary {
   specific_pubmed_query?: string;
   specific_rct_count?: number;
   specific_meta_count?: number;
+  /** Protocol-only query (no claimed outcome) for folk practices like liver flush. */
+  protocol_pubmed_query?: string;
+  protocol_paper_count?: number;
 }
 
 export interface ClaimPubMedData {
@@ -176,6 +183,8 @@ export interface Study {
   paperId?: string;
   pmid?: string;
   grain?: InterventionGrain;
+  /** Short abstract-based note; used for sparse folk-protocol papers. */
+  summary?: string;
 }
 
 export interface ClaimStudyData {

@@ -5,6 +5,8 @@
 
 import type { ObjectKind, SearchSlots } from "../types";
 import {
+  applyFolkProtocol,
+  detectFolkProtocol,
   extractPrimarySubject,
   hasDistinctInterventionClass,
   normalizeQueryText,
@@ -37,6 +39,10 @@ export function tokenizeQuery(text: string): string[] {
 
 /** Nouns in the user text that must remain on the named intervention. */
 export function extractProtectedNouns(query: string): string[] {
+  const folk = detectFolkProtocol(query);
+  if (folk) {
+    return tokenizeQuery(folk.name).filter((word) => word.length >= 4);
+  }
   const tokens = new Set<string>();
   const subject = extractPrimarySubject(query);
   for (const word of tokenizeQuery(subject)) {
@@ -54,6 +60,7 @@ export function extractProtectedNouns(query: string): string[] {
 export function inferObjectKind(query: string, intervention: string): ObjectKind {
   const haystack = `${query} ${intervention}`.toLowerCase();
   if ([...EQUIPMENT_TOKENS].some((token) => haystack.includes(token))) return "equipment";
+  if (/\b(flush|cleanse|colonic|enema)\b/i.test(haystack)) return "protocol";
   if ([...FORM_TOKENS].some((token) => haystack.includes(token))) return "food";
   if (/\b(fast|fasting|diet|protocol|training|workout)\b/i.test(haystack)) return "protocol";
   return "substance";
@@ -107,7 +114,7 @@ export function enforceProtectedNouns(query: string, slots: SearchSlots): Search
 }
 
 export function finalizeSearchSlots(query: string, slots: SearchSlots): SearchSlots {
-  return enforceProtectedNouns(query, slots);
+  return applyFolkProtocol(query, enforceProtectedNouns(query, slots));
 }
 
 /** True when the prose still names the user's object, not only the clinical class. */

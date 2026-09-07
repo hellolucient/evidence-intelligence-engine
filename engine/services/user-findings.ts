@@ -4,7 +4,7 @@
  */
 
 import type { LiteratureSummary, SearchSlots } from "../types";
-import { hasDistinctInterventionClass } from "@/lib/literature-query";
+import { hasDistinctInterventionClass, isFolkProtocol } from "@/lib/literature-query";
 
 function isHyperbaricEquipment(slots: SearchSlots): boolean {
   const haystack = `${slots.intervention} ${slots.intervention_class ?? ""}`.toLowerCase();
@@ -28,6 +28,28 @@ export function buildUserFindings(input: {
     findings.push(
       "The input reads like product copy. Claims were inferred from the copy, not from PubMed."
     );
+  }
+
+  if (slots && isFolkProtocol(slots)) {
+    const protocol = slots.intervention;
+    const outcome = slots.outcomes[0] || "the claimed outcome";
+    const protocolPapers = literature?.protocol_paper_count ?? literature?.linked_papers_count ?? 0;
+    if (literature && literature.pubmed_rct_pool === 0) {
+      findings.push(
+        `There is almost no evidence that a ${protocol} of any kind improves ${outcome}.`
+      );
+    }
+    if (protocolPapers > 0) {
+      findings.push(
+        `The papers below discuss ${protocol} in general — including claimed benefits, harms, and whether the practice is evidence-based — not this ${outcome} claim specifically.`
+      );
+    }
+    if (slots.recipe_ingredients && slots.recipe_ingredients.length > 0) {
+      findings.push(
+        `Ingredients named in the recipe (${slots.recipe_ingredients.join(", ")}) are not counted as proof that a ${protocol} works.`
+      );
+    }
+    return findings;
   }
 
   if (slots && hasDistinctInterventionClass(slots) && slots.intervention_class) {
