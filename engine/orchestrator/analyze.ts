@@ -5,17 +5,21 @@
  * Behavior is intended to remain unchanged.
  */
 
-import type { AnalyzeInput, AnalyzeResponse } from "../types";
+import type { AnalyzeInput, AnalyzeResponse, SearchSlots } from "../types";
 import { useEvidenceMap } from "../config";
 import { loadEvidenceMap, isQueryInScope } from "../services/evidence-map";
 import { createModelRouter } from "../llm/model-router";
 import { PROMPT_VERSION } from "../prompts/registry";
 import { extractClaims } from "../services/claim-parser";
+import { parseSearchSlots } from "../services/query-parser";
 import { detectFlags } from "../services/policy-engine";
 import { computeCoherenceScore } from "../services/scoring-service";
 import { rewriteResponse } from "../services/rewrite-service";
+import { claimToSearchSlots } from "@/lib/literature-query";
+import { RAW_ANSWER_SYSTEM, buildRawAnswerUserMessage } from "../services/answer-prompt";
+import { ensureNamedObjectInProse } from "../services/prose-repair";
 
-const LONGIVITY_SYSTEM = `You are a helpful longevity and biohacking advisor. Answer the user's question based on current evidence. Be informative and concise.`;
+const LONGIVITY_SYSTEM = RAW_ANSWER_SYSTEM;
 
 const LONGEVITY_KEYWORDS = [
   "longevity",
@@ -106,7 +110,8 @@ export async function analyze(
   options?: {
     llm?: import("../llm/provider").LLMProvider;
     fetchPubmed?: (
-      topic: string
+      topic: string,
+      slots?: SearchSlots | null
     ) => Promise<import("../types").PubMedSummary | null>;
   }
 ): Promise<AnalyzeResponse> {
@@ -141,21 +146,29 @@ export async function analyze(
     }
   }
 
-  const raw_response = await router.complete({
+  const query_parse = await parseSearchSlots(input.query, router);
+  const generated = await router.complete({
     taskType: "raw_answer",
     promptVersion: PROMPT_VERSION.raw_answer,
     systemPrompt: LONGIVITY_SYSTEM,
-    userMessage: input.query,
+    userMessage: buildRawAnswerUserMessage(input.query, query_parse),
   });
-  const claims = await extractClaims(raw_response, router);
-  const evidence_flags = detectFlags(claims, evidenceMap, input.query);
+  const { text: raw_response, repaired: prose_repaired } = await ensureNamedObjectInProse(
+    input.query,
+    query_parse,
+    generated,
+    router
+  );
+  const claims = await extractClaims(raw_response, router, query_parse);
+  const evidence_flags = detectFlags(claims, evidenceMap, input.query, query_parse);
   const coherence_score = computeCoherenceScore(evidence_flags);
   const guarded_response = await rewriteResponse(
     raw_response,
     claims,
     evidence_flags,
     evidenceMap,
-    router
+    router,
+    { query: input.query, slots: query_parse }
   );
 
   let pubmed_summary: AnalyzeResponse["pubmed_summary"] = undefined;
@@ -166,14 +179,14 @@ export async function analyze(
   // Always run PubMed when requested (topic-level RCT/meta counts + study links)
   if (input.includePubmed) {
     try {
-      pubmed_summary = (await fetchPubmed(input.query)) ?? undefined;
+      pubmed_summary = (await fetchPubmed(input.query, query_parse)) ?? undefined;
     } catch (err) {
       console.error("PubMed summary fetch failed:", err);
     }
 
     try {
       const { searchStudiesForTopic } = await import("@/lib/study-search");
-      const topicStudies = await searchStudiesForTopic(input.query);
+      const topicStudies = await searchStudiesForTopic(input.query, query_parse);
       if (topicStudies.studies.length > 0 || topicStudies.rct_count > 0) {
         topic_study_data = topicStudies;
       }
@@ -186,9 +199,11 @@ export async function analyze(
       const { searchStudiesForClaim } = await import("@/lib/study-search");
       const claimStudyPromises = claims.map(async (claim, index) => {
         try {
+          const claimSlots = claimToSearchSlots(claim, query_parse);
           const studyData = await searchStudiesForClaim(
             claim.claim_text,
-            input.query
+            input.query,
+            claimSlots
           );
 
           return {
@@ -219,7 +234,8 @@ export async function analyze(
   const literature_summary = rollupLiterature(
     pubmed_summary,
     claim_study_data,
-    topic_study_data
+    topic_study_data,
+    query_parse
   );
 
   return {
@@ -228,11 +244,13 @@ export async function analyze(
     claims,
     evidence_flags,
     coherence_score,
+    query_parse,
     pubmed_summary,
     literature_summary,
     claim_pubmed_data,
     claim_study_data,
     topic_study_data,
+    prose_repaired,
   };
 }
 

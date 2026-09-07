@@ -12,10 +12,50 @@ export type ClaimType =
 
 export type CertaintyLevel = "strong" | "moderate" | "speculative";
 
+export type QueryFrame = "question" | "marketing" | "claim";
+
+/** Named equipment/product vs the broader therapy or compound class. */
+export type InterventionGrain = "specific" | "class";
+
+/** Which synonym set to use when building a PubMed query from slots. */
+export type SearchGrain = InterventionGrain | "combined";
+
+export type ObjectKind = "equipment" | "food" | "substance" | "protocol" | "class" | "other";
+
+export type CriticVerdict = "accept" | "revise" | "enforced";
+
+/** Structured search slots parsed from the user question or a single claim. */
+export interface SearchSlots {
+  /** What the user named — e.g. "hyperbaric chamber". */
+  intervention: string;
+  /** Broader therapy/compound class when distinct — e.g. "hyperbaric oxygen therapy". */
+  intervention_class?: string;
+  outcomes: string[];
+  population?: string;
+  frame: QueryFrame;
+  /** True when there is no specific health outcome (e.g. “feel better”). */
+  outcome_is_broad: boolean;
+  /** When set, literature search uses only that grain's subject terms. */
+  search_grain?: SearchGrain;
+  object_kind?: ObjectKind;
+  /** Nouns from the user text that must stay on the named intervention. */
+  protected_nouns?: string[];
+  /** Asked only when two interpretations would change which papers count. */
+  clarifying_question?: string;
+  parse_challenge?: string;
+  critic_verdict?: CriticVerdict;
+  /** Ingredients named in a folk recipe (epsom salt, olive oil) — not the PubMed subject. */
+  recipe_ingredients?: string[];
+}
+
 export interface ExtractedClaim {
   claim_text: string;
   claim_type: ClaimType;
   detected_certainty_level: CertaintyLevel;
+  intervention?: string;
+  outcome?: string;
+  /** specific = named equipment/product; class = broader therapy. */
+  grain?: InterventionGrain;
 }
 
 export type HumanHealthspanEvidence = "none" | "limited" | "moderate" | "strong";
@@ -45,7 +85,8 @@ export type EvidenceFlagType =
   | "unsupported_causal_framing"
   | "minor_certainty_inflation"
   | "intervention_not_in_evidence_map"
-  | "tangential_scope_match";
+  | "tangential_scope_match"
+  | "class_to_specific_extrapolation";
 
 export interface EvidenceFlag {
   type: EvidenceFlagType;
@@ -84,6 +125,13 @@ export interface PubMedSummary {
   rct_count: number;
   meta_analysis_count: number;
   publication_volume_last_10_years: number;
+  pubmed_query?: string;
+  specific_pubmed_query?: string;
+  specific_rct_count?: number;
+  specific_meta_analysis_count?: number;
+  intervention_class?: string;
+  protocol_pubmed_query?: string;
+  protocol_paper_count?: number;
 }
 
 /** Rolled-up literature counts across topic-level PubMed and per-claim searches. */
@@ -100,7 +148,23 @@ export interface LiteratureSummary {
   claims_with_matches: number;
   /** Unique papers matched across claim-specific filters. */
   unique_claim_papers: number;
+  /** Linked papers whose source is PubMed. */
+  linked_pubmed_count: number;
+  /** Linked papers whose source is Semantic Scholar. */
+  linked_semantic_scholar_count: number;
   publication_volume_last_10_years: number;
+  pubmed_query?: string;
+  intervention?: string;
+  intervention_class?: string;
+  outcomes?: string[];
+  outcome_is_broad?: boolean;
+  frame?: QueryFrame;
+  specific_pubmed_query?: string;
+  specific_rct_count?: number;
+  specific_meta_count?: number;
+  /** Protocol-only query (no claimed outcome) for folk practices like liver flush. */
+  protocol_pubmed_query?: string;
+  protocol_paper_count?: number;
 }
 
 export interface ClaimPubMedData {
@@ -118,6 +182,9 @@ export interface Study {
   source: 'pubmed' | 'semantic_scholar';
   paperId?: string;
   pmid?: string;
+  grain?: InterventionGrain;
+  /** Short abstract-based note; used for sparse folk-protocol papers. */
+  summary?: string;
 }
 
 export interface ClaimStudyData {
@@ -139,9 +206,12 @@ export interface AnalyzeResponse {
   claims: ExtractedClaim[];
   evidence_flags: EvidenceFlag[];
   coherence_score: number;
+  query_parse?: SearchSlots;
   pubmed_summary?: PubMedSummary;
   literature_summary?: LiteratureSummary;
   claim_pubmed_data?: ClaimPubMedData[];
   claim_study_data?: ClaimStudyData[];
   topic_study_data?: TopicStudyData;
+  /** True when the raw answer omitted the named object and was repaired once. */
+  prose_repaired?: boolean;
 }
