@@ -137,6 +137,22 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
     "cold therapy",
     "cryotherapies",
   ],
+  "cold showers": [
+    "cold shower",
+    "cold water immersion",
+    "cold exposure",
+    "cold water therapy",
+  ],
+  "cold shower": [
+    "cold showers",
+    "cold water immersion",
+    "cold exposure",
+  ],
+  "daily cold showers": [
+    "cold showers",
+    "cold water immersion",
+    "cold exposure",
+  ],
   "liver flush": ["liver cleanse", "gallbladder flush", "gallbladder cleanse"],
   "liver cleanse": ["liver flush", "gallbladder flush", "gallbladder cleanse"],
   "colon cleanse": ["colon flush", "colonic irrigation"],

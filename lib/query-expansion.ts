@@ -40,12 +40,21 @@ export function autoNormalizeIntervention(intervention: string): string[] {
     terms.add(normalized.replace(/\s+/g, "-"));
   }
   
-  // Extract base term (remove modifiers)
+  // Extract base term (remove modifiers) - but ONLY if it's meaningful
   const words = normalized.split(/[\s-]+/);
   if (words.length > 1) {
     // Last word is often the base term (e.g., "whole-body cryotherapy" → "cryotherapy")
     const lastWord = words[words.length - 1];
-    if (lastWord && lastWord.length >= 4) {
+    
+    // Only add base term if:
+    // 1. It's at least 8 characters (likely specific enough)
+    // 2. OR it's a known medical/therapeutic term
+    const medicalTerms = new Set([
+      "therapy", "cryotherapy", "photobiomodulation", "acupuncture", 
+      "hyperbaric", "meditation", "fasting", "sauna"
+    ]);
+    
+    if (lastWord && lastWord.length >= 8) {
       terms.add(lastWord);
       // Add plural if it's singular
       if (!lastWord.endsWith("s") && !lastWord.endsWith("y")) {
@@ -54,10 +63,16 @@ export function autoNormalizeIntervention(intervention: string): string[] {
       // Add singular if it's plural
       if (lastWord.endsWith("ies")) {
         terms.add(lastWord.replace(/ies$/, "y"));
-      } else if (lastWord.endsWith("s") && lastWord.length > 4) {
+      } else if (lastWord.endsWith("s") && lastWord.length > 8) {
         terms.add(lastWord.slice(0, -1));
       }
+    } else if (lastWord && medicalTerms.has(lastWord)) {
+      // Known medical term - safe to add even if short
+      terms.add(lastWord);
     }
+    
+    // For compound terms like "cold showers", include the full compound
+    // Don't break it down to just "showers" (too generic)
   }
   
   return [...terms];
