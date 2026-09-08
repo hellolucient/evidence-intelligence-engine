@@ -119,6 +119,23 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
     "hbot",
   ],
   hbot: ["hyperbaric oxygen", "hyperbaric oxygen therapy", "hyperbaric chamber"],
+  "whole-body cryotherapy": [
+    "whole body cryotherapy",
+    "cryotherapy",
+    "cold therapy",
+    "wbc",
+  ],
+  "whole body cryotherapy": [
+    "whole-body cryotherapy",
+    "cryotherapy",
+    "cold therapy",
+    "wbc",
+  ],
+  "cryotherapy": [
+    "whole body cryotherapy",
+    "cold therapy",
+    "cryotherapies",
+  ],
   "liver flush": ["liver cleanse", "gallbladder flush", "gallbladder cleanse"],
   "liver cleanse": ["liver flush", "gallbladder flush", "gallbladder cleanse"],
   "colon cleanse": ["colon flush", "colonic irrigation"],
