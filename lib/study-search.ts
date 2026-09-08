@@ -17,39 +17,6 @@ import {
 import { briefAbstractSummary, ncbiEfetchAbstracts, ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
 import type { InterventionGrain, SearchSlots } from "@/engine/types";
 
-/**
- * Validate a PubMed query and log warnings (non-blocking).
- * Only runs when EIE_VALIDATE_QUERIES=true
- */
-async function logQueryValidation(
-  query: string,
-  intervention: string,
-  router?: import("@/engine/llm/model-router").ModelRouter
-): Promise<void> {
-  const { enableQueryValidation } = await import("@/lib/query-config");
-  if (!enableQueryValidation() || !router) return;
-  
-  try {
-    const { validatePubMedQuery } = await import("@/lib/query-expansion");
-    const validation = await validatePubMedQuery(query, intervention, router);
-    
-    if (!validation.isReasonable) {
-      console.warn(`[Query Validation] Query may be problematic for "${intervention}"`);
-      console.warn(`  Query: ${query}`);
-      if (validation.tooNarrow) console.warn(`  ⚠️  Too narrow - may miss relevant papers`);
-      if (validation.tooBroad) console.warn(`  ⚠️  Too broad - may match too much`);
-      if (validation.suggestions.length > 0) {
-        console.warn(`  Suggestions:`, validation.suggestions);
-      }
-      if (validation.improvedQuery) {
-        console.warn(`  Improved: ${validation.improvedQuery}`);
-      }
-    }
-  } catch (error) {
-    console.error("[Query Validation] Validation failed:", error);
-  }
-}
-
 export interface Study {
   title: string;
   authors: string[];

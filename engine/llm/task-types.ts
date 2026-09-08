@@ -5,6 +5,8 @@ export type TaskType =
   | "prose_repair"
   | "claim_extraction"
   | "rewrite"
+  | "query_expansion"
+  | "query_validation"
   | "downstream_menu_description"
   | "downstream_product_description";
 

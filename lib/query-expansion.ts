@@ -4,15 +4,16 @@
  */
 
 import type { ModelRouter } from "@/engine/llm/model-router";
+import { PROMPT_VERSION } from "@/engine/prompts/registry";
 
-interface QueryExpansion {
+export interface QueryExpansion {
   baseTerms: string[];
   variations: string[];
   abbreviations: string[];
   clinicalSynonyms: string[];
 }
 
-interface QueryValidation {
+export interface QueryValidation {
   isReasonable: boolean;
   tooNarrow: boolean;
   tooBroad: boolean;
@@ -97,7 +98,7 @@ Keep each array to 2-4 most useful terms. Be concise.`;
   try {
     const response = await router.complete({
       taskType: "query_expansion",
-      promptVersion: "query.expansion@v1",
+      promptVersion: PROMPT_VERSION.query_expansion,
       systemPrompt: "You are a medical literature search expert. Output only valid JSON.",
       userMessage: prompt,
     });
@@ -163,7 +164,7 @@ Return ONLY a JSON object:
   try {
     const response = await router.complete({
       taskType: "query_validation",
-      promptVersion: "query.validation@v1",
+      promptVersion: PROMPT_VERSION.query_validation,
       systemPrompt: "You are a medical literature search expert. Output only valid JSON.",
       userMessage: prompt,
     });

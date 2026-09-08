@@ -5,6 +5,8 @@ export const PROMPT_VERSION = {
   prose_repair: "answer.prose_repair@v1",
   claim_extraction: "claims.extract@v3",
   rewrite_guarded: "rewrite.guarded@v2",
+  query_expansion: "query.expansion@v1",
+  query_validation: "query.validation@v1",
   downstream_menu_description: "downstream.menu@v1",
   downstream_product_description: "downstream.product@v1",
 } as const;

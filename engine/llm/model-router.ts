@@ -32,6 +32,8 @@ function defaultTierForTask(taskType: TaskType): ModelTier {
     case "parse_critic":
     case "prose_repair":
     case "claim_extraction":
+    case "query_expansion":
+    case "query_validation":
     case "downstream_menu_description":
     case "downstream_product_description":
       return "cheap";
