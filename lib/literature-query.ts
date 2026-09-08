@@ -454,7 +454,7 @@ function getSubjectSearchTerms(subject: string): string[] {
  * Async version that uses LLM expansion when enabled.
  * This is where the real intent understanding happens.
  */
-async function getSubjectSearchTermsWithLLM(
+export async function getSubjectSearchTermsWithLLM(
   subject: string,
   router?: import("@/engine/llm/model-router").ModelRouter
 ): Promise<string[]> {
