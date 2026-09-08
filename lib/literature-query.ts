@@ -2,6 +2,8 @@
  * Shared PubMed / literature search query building.
  */
 
+import { findIngredient, getIngredientSearchTerms } from "@/lib/ingredient-database";
+
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
   "benefits", "benefit", "what", "does", "can", "will", "how", "why", "when", "is", "are",
@@ -69,43 +71,19 @@ export function quotePubMedPhrase(term: string): string {
   return `${cleaned}[tiab]`;
 }
 
-/**
- * Known subject expansions — PubMed often omits marketing/product phrases like "jasmine tea"
- * but indexes the underlying compound or category (green tea, L-theanine, etc.).
- */
-const SUBJECT_SYNONYMS: Record<string, string[]> = {
-  "jasmine tea": ["green tea", "tea", "camellia sinensis", "l-theanine"],
-  "green tea": ["tea", "camellia sinensis", "l-theanine"],
-  "black tea": ["tea", "camellia sinensis"],
-  "herbal tea": ["tea", "herbal"],
-  "chamomile tea": ["chamomile", "tea"],
-  "valerian tea": ["valerian", "tea"],
-};
-
 function getSubjectSearchTerms(subject: string): string[] {
   const normalized = subject.toLowerCase().trim();
   if (!normalized) return [];
 
-  const terms = new Set<string>([normalized]);
-
-  for (const [key, synonyms] of Object.entries(SUBJECT_SYNONYMS)) {
-    if (normalized.includes(key) || key.includes(normalized)) {
-      terms.add(key);
-      for (const synonym of synonyms) terms.add(synonym);
-    }
+  // First, try the comprehensive ingredient database
+  const ingredientTerms = getIngredientSearchTerms(normalized);
+  if (ingredientTerms.length > 1 || ingredientTerms[0] !== normalized) {
+    // Database found something useful
+    return ingredientTerms;
   }
 
-  // Generic tea heuristic when not already expanded
-  if (normalized.includes("tea")) {
-    terms.add("tea");
-    if (normalized.includes("jasmine") || normalized.includes("green")) {
-      terms.add("green tea");
-      terms.add("camellia sinensis");
-      terms.add("l-theanine");
-    }
-  }
-
-  return [...terms];
+  // Fallback to original term
+  return [normalized];
 }
 
 /** Build a PubMed subject clause, OR-ing synonyms when helpful. */
@@ -124,7 +102,8 @@ export function buildSubjectPubMedClause(subject: string): string {
 
 /**
  * Extract the primary intervention/subject from a user query.
- * e.g. "jasmine tea will improve your sleep" -> "jasmine tea"
+ * e.g. "red light therapy for skin aging" -> "red light therapy"
+ * e.g. "does dance cure Alzheimer's" -> "dance"
  */
 export function extractPrimarySubject(query: string): string {
   const words = query
@@ -138,8 +117,15 @@ export function extractPrimarySubject(query: string): string {
     const token = normalizeToken(word);
     if (!token) continue;
 
+    // Stop at outcome verbs
     if (OUTCOME_VERBS.has(token)) break;
 
+    // Stop at prepositions and conjunctions after we have at least one word
+    if (meaningful.length > 0 && /^(for|from|with|by|to|in|on|at|of|and|or)$/i.test(word)) {
+      break;
+    }
+
+    // Skip noise words at the beginning
     if (QUERY_NOISE_WORDS.has(token)) {
       if (meaningful.length > 0) break;
       continue;
@@ -219,9 +205,6 @@ const HEALTH_OUTCOME_TERMS = [
 const AROMA_PATTERNS =
   /\b(scent|smell|aroma|odor|odour|olfact|inhal|aromatherapy|fragrance|perfume)\b/i;
 
-const INGESTION_PATTERNS =
-  /\b(tea|drink|beverage|cup|swallow|ingest|consume|dietary|supplement)\b/i;
-
 function extractClaimOutcomeTerms(claimText: string, maxTerms = 3): string[] {
   const lower = claimText.toLowerCase();
   const outcomes: string[] = [];
@@ -241,48 +224,73 @@ function extractClaimOutcomeTerms(claimText: string, maxTerms = 3): string[] {
   return extractOutcomeTerms(claimText, maxTerms);
 }
 
-const SUBSTANCE_TERMS = [
-  "caffeine",
-  "l-theanine",
-  "theanine",
-  "melatonin",
-  "antioxidant",
-  "antioxidants",
-  "polyphenol",
-  "polyphenols",
-  "egcg",
-];
-
 function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
   const lower = claimText.toLowerCase();
   const terms = new Set<string>();
 
-  for (const substance of SUBSTANCE_TERMS) {
-    if (lower.includes(substance)) {
-      terms.add(substance === "l-theanine" ? "theanine" : substance.replace(/s$/, ""));
+  // STEP 1: ALWAYS extract and include the primary subject from original query
+  // This is our most reliable source of user intent
+  const primarySubject = extractPrimarySubject(originalQuery);
+  
+  // STEP 2: Try ingredient database ONLY for the original query's primary subject
+  // This helps with herbs/supplements but won't create spurious matches for other interventions
+  const ingredientInfo = findIngredient(primarySubject);
+  if (ingredientInfo) {
+    // Add scientific name (most important for PubMed)
+    terms.add(ingredientInfo.scientificName);
+    // Add primary common name
+    terms.add(ingredientInfo.commonNames[0]);
+    // Add aliases if present
+    if (ingredientInfo.aliases) {
+      for (const alias of ingredientInfo.aliases) {
+        terms.add(alias);
+      }
+    }
+  } else {
+    // For non-supplement interventions (red light, dance, cryo, etc.)
+    // Just use the primary subject as-is
+    if (primarySubject) {
+      terms.add(primarySubject);
     }
   }
 
-  if (lower.includes("jasmine")) {
-    terms.add("jasmine");
+  // STEP 3: Check if the claim text mentions the SAME intervention with different wording
+  // e.g., query says "red light therapy" but claim says "photobiomodulation"
+  // Only do this if we have strong signal - look for multi-word phrases from the claim
+  const claimWords = tokenize(claimText);
+  for (let i = 0; i < Math.min(5, claimWords.length); i++) {
+    // Try 2-3 word phrases from the claim
+    const twoWord = claimWords.slice(i, i + 2).join(" ");
+    const threeWord = claimWords.slice(i, i + 3).join(" ");
+    
+    for (const phrase of [threeWord, twoWord]) {
+      if (phrase.length >= 8) { // Avoid short spurious matches
+        const claimIngredient = findIngredient(phrase);
+        if (claimIngredient && claimIngredient.scientificName !== ingredientInfo?.scientificName) {
+          // Different ingredient mentioned in claim
+          terms.add(claimIngredient.scientificName);
+          terms.add(claimIngredient.commonNames[0]);
+          break;
+        }
+      }
+    }
   }
 
+  // STEP 4: Check for compound-specific terms in the claim text
+  const compoundTerms = ["antioxidant", "polyphenol", "egcg"];
+  for (const compound of compoundTerms) {
+    if (lower.includes(compound)) {
+      terms.add(compound);
+    }
+  }
+
+  // STEP 5: Handle aromatherapy context
   if (AROMA_PATTERNS.test(lower)) {
-    terms.add("jasmine");
-    terms.add("jasmine oil");
+    const aromaInfo = findIngredient(primarySubject + " oil");
+    if (aromaInfo) {
+      terms.add(aromaInfo.scientificName);
+    }
     terms.add("aromatherapy");
-  }
-
-  if (INGESTION_PATTERNS.test(lower)) {
-    for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
-      terms.add(term);
-    }
-  }
-
-  if (terms.size === 0) {
-    for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
-      terms.add(term);
-    }
   }
 
   return [...terms];
