@@ -4,6 +4,7 @@
 
 import type { SearchGrain, SearchSlots } from "@/engine/types";
 import { getIngredientSearchTerms } from "@/lib/ingredient-database";
+import { autoNormalizeIntervention } from "@/lib/query-expansion";
 
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
@@ -373,6 +374,7 @@ function getSubjectSearchTerms(subject: string): string[] {
 
   const terms = new Set<string>([normalized]);
 
+  // Manual synonyms (highest priority - domain expert knowledge)
   for (const [key, synonyms] of Object.entries(SUBJECT_SYNONYMS)) {
     if (normalized.includes(key) || key.includes(normalized)) {
       terms.add(key);
@@ -403,9 +405,17 @@ function getSubjectSearchTerms(subject: string): string[] {
     terms.add("hbot");
   }
 
-  // NEW: If no expansions found yet (only have the normalized term),
-  // try the comprehensive ingredient database for herbs/supplements
+  // Automatic normalization (handles hyphens, plurals, etc.)
+  // Only apply if we haven't found manual expansions
   if (terms.size === 1) {
+    for (const autoTerm of autoNormalizeIntervention(normalized)) {
+      terms.add(autoTerm);
+    }
+  }
+
+  // Ingredient database (for supplements not manually coded)
+  // Only apply if still no expansions found
+  if (terms.size <= 3) { // Allow some auto-normalized terms
     const ingredientTerms = getIngredientSearchTerms(normalized);
     if (ingredientTerms.length > 1 || ingredientTerms[0] !== normalized) {
       // Database found something useful - use it
@@ -924,4 +934,38 @@ export function extractClaimSearchTerms(
   originalQuery: string
 ): string {
   return buildClaimPubMedQuery(claimText, originalQuery);
+}
+
+/**
+ * Enhanced query building with LLM expansion and validation.
+ * Use this for critical queries where accuracy matters most.
+ */
+export async function buildValidatedPubMedQuery(
+  intervention: string,
+  outcomes: string[],
+  router: import("@/engine/llm/model-router").ModelRouter
+): Promise<{ query: string; validation: import("@/lib/query-expansion").QueryValidation }> {
+  const { getAllInterventionTerms, validatePubMedQuery } = await import("@/lib/query-expansion");
+  
+  // Get expanded terms (auto + LLM + cache)
+  const interventionTerms = await getAllInterventionTerms(intervention, router, true);
+  
+  // Build query with expanded terms
+  const subjectClause = interventionTerms.length > 1
+    ? `(${interventionTerms.map((term) => quotePubMedPhrase(term)).join(" OR ")})`
+    : quotePubMedPhrase(interventionTerms[0] || intervention);
+  
+  const outcomeClause = outcomes.length > 0
+    ? outcomes.slice(0, 3).map((o) => quotePubMedPhrase(o)).join(" AND ")
+    : "";
+  
+  const query = [subjectClause, outcomeClause].filter(Boolean).join(" AND ");
+  
+  // Validate the query
+  const validation = await validatePubMedQuery(query, intervention, router);
+  
+  // Use improved query if validation suggests one
+  const finalQuery = validation.improvedQuery || query;
+  
+  return { query: finalQuery, validation };
 }
