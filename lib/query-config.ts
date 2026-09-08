@@ -9,7 +9,7 @@
  * 
  * Set EIE_USE_LLM_QUERY_EXPANSION=true to enable globally.
  */
-export function useLLMQueryExpansion(): boolean {
+export function enableLLMQueryExpansion(): boolean {
   return process.env.EIE_USE_LLM_QUERY_EXPANSION === "true";
 }
 
@@ -19,7 +19,7 @@ export function useLLMQueryExpansion(): boolean {
  * 
  * Set EIE_VALIDATE_QUERIES=true to enable.
  */
-export function validateQueries(): boolean {
+export function enableQueryValidation(): boolean {
   return process.env.EIE_VALIDATE_QUERIES === "true";
 }
 
@@ -28,8 +28,8 @@ export function validateQueries(): boolean {
  */
 export function getQueryEnhancementConfig() {
   return {
-    llmExpansion: useLLMQueryExpansion(),
-    validation: validateQueries(),
+    llmExpansion: enableLLMQueryExpansion(),
+    validation: enableQueryValidation(),
     autoNormalization: true, // Always enabled
   };
 }

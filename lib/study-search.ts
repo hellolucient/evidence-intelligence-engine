@@ -21,13 +21,13 @@ import type { InterventionGrain, SearchSlots } from "@/engine/types";
  * Validate a PubMed query and log warnings (non-blocking).
  * Only runs when EIE_VALIDATE_QUERIES=true
  */
-async function validateQueryIfEnabled(
+async function logQueryValidation(
   query: string,
   intervention: string,
   router?: import("@/engine/llm/model-router").ModelRouter
 ): Promise<void> {
-  const { validateQueries } = await import("@/lib/query-config");
-  if (!validateQueries() || !router) return;
+  const { enableQueryValidation } = await import("@/lib/query-config");
+  if (!enableQueryValidation() || !router) return;
   
   try {
     const { validatePubMedQuery } = await import("@/lib/query-expansion");
