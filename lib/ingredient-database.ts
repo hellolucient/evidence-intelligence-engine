@@ -236,6 +236,9 @@ export const INGREDIENT_DATABASE: Record<string, IngredientInfo> = {
 /**
  * Find ingredient info by searching common names and variations.
  * Case-insensitive, handles plurals and common variations.
+ * 
+ * STRICT MATCHING: Returns null unless there's a clear, specific match.
+ * Avoids spurious matches for non-ingredient interventions.
  */
 export function findIngredient(text: string): IngredientInfo | null {
   const normalized = text.toLowerCase().trim()
@@ -246,29 +249,47 @@ export function findIngredient(text: string): IngredientInfo | null {
     .replace(/\bberry|berries\b/gi, "")
     .trim();
   
-  // Direct lookup
+  // Must be at least 4 characters to avoid spurious matches
+  if (normalized.length < 4) return null;
+  
+  // Direct lookup (exact match)
   if (INGREDIENT_DATABASE[normalized]) {
     return INGREDIENT_DATABASE[normalized];
   }
   
-  // Search through all entries
+  // Search through all entries - but require SUBSTANTIAL overlap
   for (const [key, info] of Object.entries(INGREDIENT_DATABASE)) {
-    // Check if normalized text contains or is contained by the key
-    if (normalized.includes(key) || key.includes(normalized)) {
+    // For short queries, require exact match
+    if (normalized.length <= 6 && normalized !== key) {
+      continue;
+    }
+    
+    // Check if normalized text contains the key OR vice versa
+    // But require the match to be at least 70% of the shorter string
+    const matchesKey = normalized.includes(key) || key.includes(normalized);
+    if (matchesKey) {
+      const shorter = Math.min(normalized.length, key.length);
+      const longer = Math.max(normalized.length, key.length);
+      // If the match is too loose (e.g., "dance" vs "elderberry"), skip it
+      if (shorter / longer < 0.5) continue;
       return info;
     }
     
-    // Check common names
+    // Check common names with same strictness
     for (const commonName of info.commonNames) {
-      if (normalized.includes(commonName.toLowerCase()) || 
-          commonName.toLowerCase().includes(normalized)) {
+      const matchesCommon = normalized.includes(commonName.toLowerCase()) || 
+                           commonName.toLowerCase().includes(normalized);
+      if (matchesCommon) {
+        const shorter = Math.min(normalized.length, commonName.length);
+        const longer = Math.max(normalized.length, commonName.length);
+        if (shorter / longer < 0.5) continue;
         return info;
       }
     }
     
-    // Check scientific name (partial match)
+    // Check scientific name (partial match) - must be highly specific
     const scientificLower = info.scientificName.toLowerCase();
-    if (scientificLower.includes(normalized) || normalized.includes(scientificLower)) {
+    if (scientificLower === normalized || normalized === scientificLower) {
       return info;
     }
   }

@@ -102,7 +102,8 @@ export function buildSubjectPubMedClause(subject: string): string {
 
 /**
  * Extract the primary intervention/subject from a user query.
- * e.g. "jasmine tea will improve your sleep" -> "jasmine tea"
+ * e.g. "red light therapy for skin aging" -> "red light therapy"
+ * e.g. "does dance cure Alzheimer's" -> "dance"
  */
 export function extractPrimarySubject(query: string): string {
   const words = query
@@ -116,8 +117,15 @@ export function extractPrimarySubject(query: string): string {
     const token = normalizeToken(word);
     if (!token) continue;
 
+    // Stop at outcome verbs
     if (OUTCOME_VERBS.has(token)) break;
 
+    // Stop at prepositions and conjunctions after we have at least one word
+    if (meaningful.length > 0 && /^(for|from|with|by|to|in|on|at|of|and|or)$/i.test(word)) {
+      break;
+    }
+
+    // Skip noise words at the beginning
     if (QUERY_NOISE_WORDS.has(token)) {
       if (meaningful.length > 0) break;
       continue;
@@ -223,11 +231,12 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
   const lower = claimText.toLowerCase();
   const terms = new Set<string>();
 
-  // ALWAYS extract the primary subject from original query FIRST
-  // This is our most reliable source of intent
+  // STEP 1: ALWAYS extract and include the primary subject from original query
+  // This is our most reliable source of user intent
   const primarySubject = extractPrimarySubject(originalQuery);
   
-  // Try ingredient database first - this handles herbs, supplements, etc.
+  // STEP 2: Try ingredient database ONLY for the original query's primary subject
+  // This helps with herbs/supplements but won't create spurious matches for other interventions
   const ingredientInfo = findIngredient(primarySubject);
   if (ingredientInfo) {
     // Add scientific name (most important for PubMed)
@@ -241,30 +250,36 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
       }
     }
   } else {
-    // Fallback to original logic for non-database ingredients
-    for (const term of getSubjectSearchTerms(primarySubject)) {
-      terms.add(term);
+    // For non-supplement interventions (red light, dance, cryo, etc.)
+    // Just use the primary subject as-is
+    if (primarySubject) {
+      terms.add(primarySubject);
     }
   }
 
-  // ADDITIONALLY check if the claim text mentions a DIFFERENT ingredient by full name
-  // (in case the claim is about a secondary ingredient)
-  // Only check words that are at least 4 characters to avoid false matches
-  const claimWords = tokenize(claimText).filter(w => w.length >= 4);
-  for (const word of claimWords.slice(0, 8)) {
-    const claimIngredient = findIngredient(word);
-    // Only add if it's a different ingredient AND the match is reasonably specific
-    if (claimIngredient && 
-        claimIngredient.scientificName !== ingredientInfo?.scientificName &&
-        word.length >= 5) { // Require at least 5 chars to avoid spurious matches
-      // Different ingredient mentioned in claim
-      terms.add(claimIngredient.scientificName);
-      terms.add(claimIngredient.commonNames[0]);
-      break; // Only add one additional ingredient to avoid over-broadening
+  // STEP 3: Check if the claim text mentions the SAME intervention with different wording
+  // e.g., query says "red light therapy" but claim says "photobiomodulation"
+  // Only do this if we have strong signal - look for multi-word phrases from the claim
+  const claimWords = tokenize(claimText);
+  for (let i = 0; i < Math.min(5, claimWords.length); i++) {
+    // Try 2-3 word phrases from the claim
+    const twoWord = claimWords.slice(i, i + 2).join(" ");
+    const threeWord = claimWords.slice(i, i + 3).join(" ");
+    
+    for (const phrase of [threeWord, twoWord]) {
+      if (phrase.length >= 8) { // Avoid short spurious matches
+        const claimIngredient = findIngredient(phrase);
+        if (claimIngredient && claimIngredient.scientificName !== ingredientInfo?.scientificName) {
+          // Different ingredient mentioned in claim
+          terms.add(claimIngredient.scientificName);
+          terms.add(claimIngredient.commonNames[0]);
+          break;
+        }
+      }
     }
   }
 
-  // Check for compound-specific terms in the claim text
+  // STEP 4: Check for compound-specific terms in the claim text
   const compoundTerms = ["antioxidant", "polyphenol", "egcg"];
   for (const compound of compoundTerms) {
     if (lower.includes(compound)) {
@@ -272,7 +287,7 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
     }
   }
 
-  // Handle aromatherapy context
+  // STEP 5: Handle aromatherapy context
   if (AROMA_PATTERNS.test(lower)) {
     const aromaInfo = findIngredient(primarySubject + " oil");
     if (aromaInfo) {
