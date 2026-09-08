@@ -8,18 +8,35 @@ import { PROMPT_VERSION } from "../prompts/registry";
 
 const EXTRACTION_SYSTEM = `You are a claim extractor for longevity and health content.
 Given a raw text response, extract every discrete factual claim.
+
+CRITICAL: When extracting claims, you MUST preserve specific ingredient/intervention names exactly as they appear in the original text. Do NOT replace specific names with generic terms like "the supplement", "herbal supplements", "this intervention", etc.
+
 For each claim output:
-- claim_text: exact or close paraphrase of the claim
+- claim_text: the claim text with SPECIFIC ingredient/intervention names preserved (e.g., "ashwagandha", "metformin", "fasting", "NMN")
 - claim_type: one of mechanistic | biomarker | lifespan_outcome | healthspan_outcome | intervention_effect | other
 - detected_certainty_level: one of strong | moderate | speculative (infer from wording: "proven", "extends lifespan" -> strong; "may", "suggests" -> moderate; "could", "might" -> speculative)
+
+Examples of CORRECT extraction:
+✓ "Ashwagandha may reduce cortisol levels in stressed adults"
+✓ "Metformin activates AMPK in muscle cells"
+✓ "Fasting triggers autophagy"
+
+Examples of INCORRECT extraction (too generic):
+✗ "The supplement may reduce cortisol levels" ← Missing "ashwagandha"
+✗ "This drug activates AMPK" ← Missing "metformin"
+✗ "Dietary restriction triggers autophagy" ← Missing "fasting"
 
 Output ONLY a valid JSON array of objects with keys claim_text, claim_type, detected_certainty_level. No markdown, no explanation.`;
 
 export async function extractClaims(
   rawResponse: string,
-  router: ModelRouter
+  router: ModelRouter,
+  originalQuery?: string
 ): Promise<ExtractedClaim[]> {
-  const userMessage = `Extract all factual claims from this response as a JSON array:\n\n${rawResponse}`;
+  const contextHint = originalQuery 
+    ? `\n\nOriginal user query: "${originalQuery}"\nWhen extracting claims, preserve any specific ingredient, supplement, drug, or intervention names mentioned in either the query or response.`
+    : '';
+  const userMessage = `Extract all factual claims from this response as a JSON array:${contextHint}\n\n${rawResponse}`;
   const out = await router.complete({
     taskType: "claim_extraction",
     promptVersion: PROMPT_VERSION.claim_extraction,

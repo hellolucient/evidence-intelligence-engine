@@ -147,7 +147,7 @@ export async function analyze(
     systemPrompt: LONGIVITY_SYSTEM,
     userMessage: input.query,
   });
-  const claims = await extractClaims(raw_response, router);
+  const claims = await extractClaims(raw_response, router, input.query);
   const evidence_flags = detectFlags(claims, evidenceMap, input.query);
   const coherence_score = computeCoherenceScore(evidence_flags);
   const guarded_response = await rewriteResponse(

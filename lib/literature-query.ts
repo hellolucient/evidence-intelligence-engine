@@ -223,7 +223,8 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
   const lower = claimText.toLowerCase();
   const terms = new Set<string>();
 
-  // Extract the primary subject from original query
+  // ALWAYS extract the primary subject from original query FIRST
+  // This is our most reliable source of intent
   const primarySubject = extractPrimarySubject(originalQuery);
   
   // Try ingredient database first - this handles herbs, supplements, etc.
@@ -243,6 +244,23 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
     // Fallback to original logic for non-database ingredients
     for (const term of getSubjectSearchTerms(primarySubject)) {
       terms.add(term);
+    }
+  }
+
+  // ADDITIONALLY check if the claim text mentions a DIFFERENT ingredient by full name
+  // (in case the claim is about a secondary ingredient)
+  // Only check words that are at least 4 characters to avoid false matches
+  const claimWords = tokenize(claimText).filter(w => w.length >= 4);
+  for (const word of claimWords.slice(0, 8)) {
+    const claimIngredient = findIngredient(word);
+    // Only add if it's a different ingredient AND the match is reasonably specific
+    if (claimIngredient && 
+        claimIngredient.scientificName !== ingredientInfo?.scientificName &&
+        word.length >= 5) { // Require at least 5 chars to avoid spurious matches
+      // Different ingredient mentioned in claim
+      terms.add(claimIngredient.scientificName);
+      terms.add(claimIngredient.commonNames[0]);
+      break; // Only add one additional ingredient to avoid over-broadening
     }
   }
 
