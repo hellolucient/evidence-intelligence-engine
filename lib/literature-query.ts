@@ -2,6 +2,8 @@
  * Shared PubMed / literature search query building.
  */
 
+import { findIngredient, getIngredientSearchTerms } from "@/lib/ingredient-database";
+
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
   "benefits", "benefit", "what", "does", "can", "will", "how", "why", "when", "is", "are",
@@ -69,43 +71,19 @@ export function quotePubMedPhrase(term: string): string {
   return `${cleaned}[tiab]`;
 }
 
-/**
- * Known subject expansions — PubMed often omits marketing/product phrases like "jasmine tea"
- * but indexes the underlying compound or category (green tea, L-theanine, etc.).
- */
-const SUBJECT_SYNONYMS: Record<string, string[]> = {
-  "jasmine tea": ["green tea", "tea", "camellia sinensis", "l-theanine"],
-  "green tea": ["tea", "camellia sinensis", "l-theanine"],
-  "black tea": ["tea", "camellia sinensis"],
-  "herbal tea": ["tea", "herbal"],
-  "chamomile tea": ["chamomile", "tea"],
-  "valerian tea": ["valerian", "tea"],
-};
-
 function getSubjectSearchTerms(subject: string): string[] {
   const normalized = subject.toLowerCase().trim();
   if (!normalized) return [];
 
-  const terms = new Set<string>([normalized]);
-
-  for (const [key, synonyms] of Object.entries(SUBJECT_SYNONYMS)) {
-    if (normalized.includes(key) || key.includes(normalized)) {
-      terms.add(key);
-      for (const synonym of synonyms) terms.add(synonym);
-    }
+  // First, try the comprehensive ingredient database
+  const ingredientTerms = getIngredientSearchTerms(normalized);
+  if (ingredientTerms.length > 1 || ingredientTerms[0] !== normalized) {
+    // Database found something useful
+    return ingredientTerms;
   }
 
-  // Generic tea heuristic when not already expanded
-  if (normalized.includes("tea")) {
-    terms.add("tea");
-    if (normalized.includes("jasmine") || normalized.includes("green")) {
-      terms.add("green tea");
-      terms.add("camellia sinensis");
-      terms.add("l-theanine");
-    }
-  }
-
-  return [...terms];
+  // Fallback to original term
+  return [normalized];
 }
 
 /** Build a PubMed subject clause, OR-ing synonyms when helpful. */
@@ -241,48 +219,48 @@ function extractClaimOutcomeTerms(claimText: string, maxTerms = 3): string[] {
   return extractOutcomeTerms(claimText, maxTerms);
 }
 
-const SUBSTANCE_TERMS = [
-  "caffeine",
-  "l-theanine",
-  "theanine",
-  "melatonin",
-  "antioxidant",
-  "antioxidants",
-  "polyphenol",
-  "polyphenols",
-  "egcg",
-];
-
 function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
   const lower = claimText.toLowerCase();
   const terms = new Set<string>();
 
-  for (const substance of SUBSTANCE_TERMS) {
-    if (lower.includes(substance)) {
-      terms.add(substance === "l-theanine" ? "theanine" : substance.replace(/s$/, ""));
+  // Extract the primary subject from original query
+  const primarySubject = extractPrimarySubject(originalQuery);
+  
+  // Try ingredient database first - this handles herbs, supplements, etc.
+  const ingredientInfo = findIngredient(primarySubject);
+  if (ingredientInfo) {
+    // Add scientific name (most important for PubMed)
+    terms.add(ingredientInfo.scientificName);
+    // Add primary common name
+    terms.add(ingredientInfo.commonNames[0]);
+    // Add aliases if present
+    if (ingredientInfo.aliases) {
+      for (const alias of ingredientInfo.aliases) {
+        terms.add(alias);
+      }
+    }
+  } else {
+    // Fallback to original logic for non-database ingredients
+    for (const term of getSubjectSearchTerms(primarySubject)) {
+      terms.add(term);
     }
   }
 
-  if (lower.includes("jasmine")) {
-    terms.add("jasmine");
+  // Check for compound-specific terms in the claim text
+  const compoundTerms = ["antioxidant", "polyphenol", "egcg"];
+  for (const compound of compoundTerms) {
+    if (lower.includes(compound)) {
+      terms.add(compound);
+    }
   }
 
+  // Handle aromatherapy context
   if (AROMA_PATTERNS.test(lower)) {
-    terms.add("jasmine");
-    terms.add("jasmine oil");
+    const aromaInfo = findIngredient(primarySubject + " oil");
+    if (aromaInfo) {
+      terms.add(aromaInfo.scientificName);
+    }
     terms.add("aromatherapy");
-  }
-
-  if (INGESTION_PATTERNS.test(lower)) {
-    for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
-      terms.add(term);
-    }
-  }
-
-  if (terms.size === 0) {
-    for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
-      terms.add(term);
-    }
   }
 
   return [...terms];
