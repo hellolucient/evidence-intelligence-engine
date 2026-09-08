@@ -45,6 +45,9 @@ const OUTCOME_VERBS = new Set([
   "affect", "affects", "affected", "affecting",
   "benefit", "benefits", "benefited", "benefiting",
   "optimize", "optimizes", "optimized", "optimizing",
+  "detoxify", "detoxifies", "detoxified", "detoxifying",
+  "remove", "removes", "removed", "removing",
+  "eliminate", "eliminates", "eliminated", "eliminating",
 ]);
 
 const CLAIM_STOP_WORDS = new Set([
@@ -156,6 +159,18 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
   "liver flush": ["liver cleanse", "gallbladder flush", "gallbladder cleanse"],
   "liver cleanse": ["liver flush", "gallbladder flush", "gallbladder cleanse"],
   "colon cleanse": ["colon flush", "colonic irrigation"],
+  "infrared sauna": [
+    "far infrared sauna",
+    "far-infrared sauna",
+    "infrared sauna therapy",
+    "waon therapy",
+  ],
+  "far infrared sauna": [
+    "infrared sauna",
+    "far-infrared sauna",
+    "waon therapy",
+  ],
+  sauna: ["sauna bathing", "sauna therapy", "finnish sauna"],
 };
 
 /**
@@ -169,6 +184,9 @@ const INTERVENTION_CLASS: Record<string, string> = {
   "jasmine tea": "green tea",
   "red light therapy": "photobiomodulation",
   "red light": "photobiomodulation",
+  "infrared sauna": "sauna",
+  "far infrared sauna": "sauna",
+  "far-infrared sauna": "sauna",
 };
 
 type FolkProtocol = {
@@ -265,6 +283,13 @@ const SPECIFIC_EQUIPMENT_TERMS: Record<string, string[]> = {
     "multiplace chamber",
     "mild hyperbaric",
   ],
+  "infrared sauna": [
+    "infrared sauna",
+    "far infrared sauna",
+    "far-infrared sauna",
+    "infrared cabin",
+    "waon therapy",
+  ],
 };
 
 export function resolveInterventionClass(intervention: string): string | undefined {
@@ -272,11 +297,14 @@ export function resolveInterventionClass(intervention: string): string | undefin
   if (!normalized) return undefined;
   if (INTERVENTION_CLASS[normalized]) {
     const className = INTERVENTION_CLASS[normalized];
-    return className.toLowerCase() === normalized ? undefined : className;
+    if (className.toLowerCase() === normalized || isVagueInterventionClass(className)) {
+      return undefined;
+    }
+    return className;
   }
   for (const [key, className] of Object.entries(INTERVENTION_CLASS)) {
     if (normalized.includes(key) && className.toLowerCase() !== normalized) {
-      return className;
+      return isVagueInterventionClass(className) ? undefined : className;
     }
   }
   return undefined;
@@ -286,7 +314,8 @@ export function hasDistinctInterventionClass(slots: SearchSlots | null | undefin
   if (isFolkProtocol(slots)) return false;
   const named = slots?.intervention?.trim().toLowerCase() ?? "";
   const className = slots?.intervention_class?.trim().toLowerCase() ?? "";
-  return Boolean(named && className && named !== className);
+  if (!named || !className || named === className) return false;
+  return !isVagueInterventionClass(className);
 }
 
 export function getNarrowSearchTerms(intervention: string): string[] {
@@ -320,15 +349,15 @@ function getCombinedSearchTerms(slots: SearchSlots): string[] {
 }
 
 export function termsForSearchGrain(slots: SearchSlots, grain: SearchGrain): string[] {
-  if (slots.expanded_terms && slots.expanded_terms.length > 0) {
-    console.info(`[Query Building] Using LLM-expanded terms:`, slots.expanded_terms);
-    return slots.expanded_terms;
+  if (grain === "specific") {
+    const narrow = getNarrowSearchTerms(slots.intervention);
+    if (!slots.expanded_terms?.length) return narrow;
+    return [...new Set([...narrow, ...slots.expanded_terms])];
   }
-
-  // PRIORITY 2: Use grain-specific manual expansion
-  if (grain === "specific") return getNarrowSearchTerms(slots.intervention);
   if (grain === "class") return getClassSearchTerms(slots);
-  return getCombinedSearchTerms(slots);
+  const combined = getCombinedSearchTerms(slots);
+  if (!slots.expanded_terms?.length) return combined;
+  return [...new Set([...combined, ...slots.expanded_terms])];
 }
 
 /** Consumer outcome phrases → terms papers actually use. */
@@ -368,7 +397,8 @@ const GENERIC_OUTCOME_WORDS = new Set([
 ]);
 
 const TRAILING_PRODUCT_WORDS = new Set([
-  "bed", "device", "machine", "product", "kit", "panel", "lamp", "mask", "session",
+  "bed", "device", "machine", "product", "kit", "panel", "lamp", "mask",
+  "session", "sessions",
   "treatment", "treatments",
 ]);
 
@@ -548,19 +578,55 @@ export function extractPrimarySubject(query: string): string {
   return meaningful.join(" ").trim();
 }
 
+/** Classes that are marketing buckets, not PubMed search subjects. */
+const VAGUE_INTERVENTION_CLASSES = new Set([
+  "detoxification",
+  "detox",
+  "detoxification protocol",
+  "detoxification therapy",
+  "detox protocol",
+  "protocol",
+  "therapy",
+  "treatment",
+  "wellness",
+  "health",
+  "supplement",
+  "intervention",
+]);
+
+export function isVagueInterventionClass(name: string | undefined): boolean {
+  const normalized = (name ?? "").toLowerCase().trim();
+  if (!normalized) return true;
+  if (VAGUE_INTERVENTION_CLASSES.has(normalized)) return true;
+  return /\b(detox|detoxification)\b/.test(normalized);
+}
+
 export function sanitizeIntervention(text: string): string {
   const normalized = normalizeQueryText(text).replace(/\?/g, "").trim();
   if (!normalized) return "";
-  if (normalized.split(/\s+/).length > 6) {
+
+  const kept: string[] = [];
+  for (const word of normalized.split(/\s+/)) {
+    const token = normalizeToken(word);
+    if (!token) continue;
+    if (OUTCOME_VERBS.has(token)) {
+      if (kept.length > 0) break;
+      continue;
+    }
+    kept.push(word);
+  }
+
+  while (kept.length > 0) {
+    const last = normalizeToken(kept[kept.length - 1] ?? "");
+    if (!TRAILING_PRODUCT_WORDS.has(last)) break;
+    kept.pop();
+  }
+
+  const cleaned = kept.join(" ").trim();
+  if (!cleaned || kept.length > 6) {
     return extractPrimarySubject(normalized);
   }
-  const words = normalized.split(/\s+/);
-  while (words.length > 0) {
-    const last = normalizeToken(words[words.length - 1] ?? "");
-    if (!TRAILING_PRODUCT_WORDS.has(last)) break;
-    words.pop();
-  }
-  return words.join(" ").trim();
+  return cleaned;
 }
 
 const VAGUE_OUTCOME_PHRASES = new Set([
@@ -619,6 +685,8 @@ const HEALTH_OUTCOME_TERMS = [
   "injury recovery",
   "wound healing",
   "injury",
+  "heavy metals",
+  "heavy metal",
 ];
 
 const VAGUE_HEALTH_OUTCOMES = new Set(["health", "wellbeing", "well-being"]);

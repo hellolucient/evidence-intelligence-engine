@@ -9,6 +9,7 @@ import {
   detectFolkProtocol,
   extractPrimarySubject,
   hasDistinctInterventionClass,
+  isVagueInterventionClass,
   normalizeQueryText,
   resolveInterventionClass,
   sanitizeIntervention,
@@ -60,7 +61,7 @@ export function extractProtectedNouns(query: string): string[] {
 export function inferObjectKind(query: string, intervention: string): ObjectKind {
   const haystack = `${query} ${intervention}`.toLowerCase();
   if ([...EQUIPMENT_TOKENS].some((token) => haystack.includes(token))) return "equipment";
-  if (/\b(red light|photobiomodulation|light therapy)\b/i.test(haystack)) return "equipment";
+  if (/\b(red light|photobiomodulation|light therapy|sauna|cryotherapy)\b/i.test(haystack)) return "equipment";
   if (/\b(flush|cleanse|colonic|enema)\b/i.test(haystack)) return "protocol";
   if ([...FORM_TOKENS].some((token) => haystack.includes(token))) return "food";
   if (/\b(fast|fasting|diet|protocol|training|workout)\b/i.test(haystack)) return "protocol";
@@ -98,11 +99,14 @@ export function enforceProtectedNouns(query: string, slots: SearchSlots): Search
   }
 
   const object_kind = slots.object_kind || inferObjectKind(query, intervention);
-  const intervention_class =
-    slots.intervention_class || resolveInterventionClass(intervention);
+  const resolvedClass = resolveInterventionClass(intervention);
+  const rawClass = slots.intervention_class;
+  const intervention_class = isVagueInterventionClass(rawClass)
+    ? resolvedClass
+    : rawClass || resolvedClass;
   const next: SearchSlots = {
     ...slots,
-    intervention,
+    intervention: sanitizeIntervention(intervention) || intervention,
     intervention_class,
     object_kind,
     protected_nouns: protectedNouns,

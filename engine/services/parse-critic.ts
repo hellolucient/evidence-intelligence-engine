@@ -7,7 +7,11 @@ import type { ModelRouter } from "../llm/model-router";
 import { PROMPT_VERSION } from "../prompts/registry";
 import { parseLlmJson } from "./llm-json";
 import { finalizeSearchSlots } from "./parse-protocol";
-import { resolveInterventionClass, sanitizeIntervention } from "@/lib/literature-query";
+import {
+  isVagueInterventionClass,
+  resolveInterventionClass,
+  sanitizeIntervention,
+} from "@/lib/literature-query";
 
 export const CRITIC_MAX_ROUNDS = 2;
 
@@ -16,6 +20,8 @@ const CRITIC_SYSTEM = `You challenge a literature-search parse of a health or lo
 The parse must keep the thing the user NAMED (equipment, food, product form, or folk protocol such as a liver flush). You may ADD a broader clinical class. You must not REPLACE the named object with the class or an acronym.
 
 For folk protocols (liver flush, colon cleanse), intervention is the protocol name. Do not replace it with "detoxification". Recipe ingredients stay secondary.
+
+Intervention must be the named object only — strip claim verbs ("detoxify", "improve", "reduce"). Never set intervention_class to a vague bucket ("detoxification", "detoxification protocol", "therapy"). Infrared sauna → class "sauna".
 
 Protected nouns are listed in the user message. Every protected noun must remain inside "intervention".
 
@@ -56,9 +62,13 @@ function criticSlotsFromUnknown(raw: unknown, current: SearchSlots): SearchSlots
     : current.outcomes;
   const parsedClass = sanitizeIntervention(String(record.intervention_class ?? ""));
   const intervention_class =
-    parsedClass && parsedClass.toLowerCase() !== intervention.toLowerCase()
+    parsedClass &&
+    parsedClass.toLowerCase() !== intervention.toLowerCase() &&
+    !isVagueInterventionClass(parsedClass)
       ? parsedClass
-      : current.intervention_class || resolveInterventionClass(intervention);
+      : isVagueInterventionClass(current.intervention_class)
+        ? resolveInterventionClass(intervention)
+        : current.intervention_class || resolveInterventionClass(intervention);
   const clarifying =
     typeof record.clarifying_question === "string" ? record.clarifying_question.trim() : "";
   const challenge = typeof record.challenge === "string" ? record.challenge.trim() : "";

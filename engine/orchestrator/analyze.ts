@@ -169,8 +169,11 @@ export async function analyze(
       const { enableLLMQueryExpansion } = await import("@/lib/query-config");
       
       if (enableLLMQueryExpansion()) {
+        const { sanitizeIntervention } = await import("@/lib/literature-query");
+        const namedIntervention =
+          sanitizeIntervention(query_parse.intervention) || query_parse.intervention;
         const expandedTerms = await getAllInterventionTerms(
-          query_parse.intervention,
+          namedIntervention,
           router,
           true // use LLM
         );
@@ -208,7 +211,7 @@ export async function analyze(
   // Always run PubMed when requested (topic-level RCT/meta counts + study links)
   if (input.includePubmed) {
     try {
-      pubmed_summary = (await fetchPubmed(input.query, query_parse)) ?? undefined;
+      pubmed_summary = (await fetchPubmed(input.query, expandedQuerySlots)) ?? undefined;
     } catch (err) {
       console.error("PubMed summary fetch failed:", err);
     }
@@ -266,7 +269,7 @@ export async function analyze(
     pubmed_summary,
     claim_study_data,
     topic_study_data,
-    query_parse
+    expandedQuerySlots
   );
 
   return {

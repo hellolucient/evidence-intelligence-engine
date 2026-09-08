@@ -50,11 +50,19 @@ export function autoNormalizeIntervention(intervention: string): string[] {
     // 1. It's at least 8 characters (likely specific enough)
     // 2. OR it's a known medical/therapeutic term
     const medicalTerms = new Set([
-      "therapy", "cryotherapy", "photobiomodulation", "acupuncture", 
-      "hyperbaric", "meditation", "fasting", "sauna"
+      "cryotherapy", "photobiomodulation", "acupuncture",
+      "hyperbaric", "meditation", "fasting", "sauna",
     ]);
-    
-    if (lastWord && lastWord.length >= 8) {
+    const genericBaseTerms = new Set([
+      "protocol", "protocols", "session", "sessions",
+      "therapy", "therapies", "treatment", "treatments",
+      "device", "devices", "system", "systems",
+      "method", "methods", "practice", "practices",
+    ]);
+
+    if (lastWord && genericBaseTerms.has(lastWord)) {
+      // Too generic to search alone ("detoxification protocol" → "protocol")
+    } else if (lastWord && lastWord.length >= 8) {
       terms.add(lastWord);
       // Add plural if it's singular
       if (!lastWord.endsWith("s") && !lastWord.endsWith("y")) {

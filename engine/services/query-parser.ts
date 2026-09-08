@@ -11,6 +11,7 @@ import { challengeParse } from "./parse-critic";
 import { finalizeSearchSlots } from "./parse-protocol";
 import {
   heuristicSearchSlots,
+  isVagueInterventionClass,
   resolveInterventionClass,
   sanitizeIntervention,
 } from "@/lib/literature-query";
@@ -20,11 +21,10 @@ const PARSE_SYSTEM = `You extract literature-search slots from a user message ab
 Ignore sales language (try our, guaranteed, buy now). Keep the named equipment or product as the intervention when the user named one (chamber, bed, device, a specific tea). Also name the broader therapy or compound class when it is different.
 
 Rules:
-- intervention: what the user named, e.g. "hyperbaric chamber", "jasmine tea", "red light therapy bed" → "red light therapy". Not the whole slogan.
+- intervention: the named object only, e.g. "hyperbaric chamber", "jasmine tea", "red light therapy bed" → "red light therapy", "infrared sauna sessions detoxify" → "infrared sauna". Never glue a claim verb (detoxify, improve, reduce, remove) onto the intervention.
 - If they named a folk protocol (liver flush, colon cleanse) plus recipe ingredients (epsom salt, olive oil), intervention is the PROTOCOL ("liver flush"), not the glued ingredients. Do not set intervention_class to generic "detoxification".
-- intervention_class: broader clinical class when distinct, e.g. hyperbaric chamber → "hyperbaric oxygen therapy"; jasmine tea → "green tea". Empty string if the named thing IS the class (metformin) or the class would be a vague bucket like detoxification.
-- intervention_class: broader clinical class when distinct, e.g. hyperbaric chamber → "hyperbaric oxygen therapy"; jasmine tea → "green tea". Empty string if the named thing IS the class (metformin).
-- outcomes: specific measurable effects only, e.g. sleep, melatonin, anxiety, lifespan. Empty array if the pitch is only "feel better" / "wellbeing".
+- intervention_class: broader clinical class when distinct, e.g. hyperbaric chamber → "hyperbaric oxygen therapy"; jasmine tea → "green tea"; infrared sauna → "sauna". Empty string if the named thing IS the class (metformin) or the class would be a vague bucket like detoxification / "detoxification protocol".
+- outcomes: specific measurable effects only, e.g. sleep, melatonin, anxiety, lifespan, heavy metals. Empty array if the pitch is only "feel better" / "wellbeing".
 - Do not put the intervention's own words (therapy, light, tea, chamber) in outcomes.
 - Do not use melatonin/caffeine as the intervention when they are the claimed effect of something else (e.g. red light → melatonin).
 - frame: "marketing" if it reads like ad copy; "question" if it is a question; "claim" otherwise.
@@ -58,7 +58,9 @@ function slotsFromUnknown(raw: unknown): SearchSlots | null {
 
   const parsedClass = sanitizeIntervention(String(record.intervention_class ?? ""));
   const intervention_class =
-    parsedClass && parsedClass.toLowerCase() !== intervention.toLowerCase()
+    parsedClass &&
+    parsedClass.toLowerCase() !== intervention.toLowerCase() &&
+    !isVagueInterventionClass(parsedClass)
       ? parsedClass
       : resolveInterventionClass(intervention);
 
@@ -77,8 +79,9 @@ function mergeSlots(llm: SearchSlots | null, fallback: SearchSlots): SearchSlots
 
   const intervention = llm.intervention || fallback.intervention;
   const outcomes = llm.outcomes.length > 0 ? llm.outcomes : fallback.outcomes;
-  const intervention_class =
-    llm.intervention_class || fallback.intervention_class || resolveInterventionClass(intervention);
+  const intervention_class = isVagueInterventionClass(llm.intervention_class)
+    ? fallback.intervention_class || resolveInterventionClass(intervention)
+    : llm.intervention_class || fallback.intervention_class || resolveInterventionClass(intervention);
 
   return {
     intervention,

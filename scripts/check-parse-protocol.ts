@@ -6,6 +6,7 @@ import {
   clarifyingQuestionFor,
   enforceProtectedNouns,
   extractProtectedNouns,
+  finalizeSearchSlots,
   inferObjectKind,
   proseCoversNamedObject,
 } from "../engine/services/parse-protocol";
@@ -272,8 +273,30 @@ assert(
   "folk findings are not the chamber dual-grain copy"
 );
 
+const saunaQuery =
+  "Infrared sauna sessions detoxify the body by removing heavy metals through sweat.";
+const hostileSauna: SearchSlots = {
+  intervention: "Infrared sauna sessions detoxify",
+  intervention_class: "detoxification protocol",
+  outcomes: ["heavy metals"],
+  frame: "claim",
+  outcome_is_broad: false,
+  object_kind: "equipment",
+};
+const finalizedSauna = finalizeSearchSlots(saunaQuery, hostileSauna);
+assert(
+  finalizedSauna.intervention.toLowerCase() === "infrared sauna",
+  `finalize must strip the claim verb, got "${finalizedSauna.intervention}"`
+);
+assert(
+  finalizedSauna.intervention_class === "sauna",
+  `finalize must replace detox protocol with sauna, got "${finalizedSauna.intervention_class}"`
+);
+assert(finalizedSauna.object_kind === "equipment", `sauna kind ${finalizedSauna.object_kind}`);
+
 console.log("parse-protocol checks passed");
 console.log("  hbot restored:", restored.intervention, "⊂", restored.intervention_class);
 console.log("  clarifying:", restored.clarifying_question);
 console.log("  tea restored:", hostileTea.intervention);
 console.log("  redlight:", redlight.intervention, "→", redlight.outcomes);
+console.log("  sauna finalized:", finalizedSauna.intervention, "⊂", finalizedSauna.intervention_class);

@@ -8,9 +8,12 @@ import {
   extractPrimarySubject,
   hasDistinctInterventionClass,
   heuristicSearchSlots,
+  isVagueInterventionClass,
   resolveInterventionClass,
+  sanitizeIntervention,
 } from "../lib/literature-query";
 import { buildRawAnswerUserMessage } from "../engine/services/answer-prompt";
+import { autoNormalizeIntervention } from "../lib/query-expansion";
 
 function assert(condition: unknown, message: string): void {
   if (!condition) {
@@ -232,6 +235,49 @@ assertIncludes(injuryTopic, "injury", "injury recovery maps to injury");
 assertIncludes(injuryTopic, "wound healing", "injury recovery maps to wound healing");
 assertNotIncludes(injuryTopic, '"injury recovery"[tiab]', "do not AND quoted consumer injury phrasing");
 
+const saunaQuery =
+  "Infrared sauna sessions detoxify the body by removing heavy metals through sweat.";
+assert(
+  extractPrimarySubject(saunaQuery).toLowerCase() === "infrared sauna",
+  `sauna subject must drop the claim verb, got "${extractPrimarySubject(saunaQuery)}"`
+);
+assert(
+  sanitizeIntervention("Infrared sauna sessions detoxify").toLowerCase() === "infrared sauna",
+  `sanitize must strip sessions + detoxify, got "${sanitizeIntervention("Infrared sauna sessions detoxify")}"`
+);
+assert(isVagueInterventionClass("detoxification protocol"), "detox protocol is a vague class");
+assert(!isVagueInterventionClass("sauna"), "sauna is a real class");
+const saunaSlots = heuristicSearchSlots(saunaQuery);
+assert(
+  saunaSlots.intervention.toLowerCase() === "infrared sauna",
+  `sauna heuristic intervention, got "${saunaSlots.intervention}"`
+);
+assert(saunaSlots.intervention_class === "sauna", `sauna class, got "${saunaSlots.intervention_class}"`);
+assert(
+  saunaSlots.outcomes.some((outcome) => /heavy metal/.test(outcome)),
+  `sauna outcomes ${saunaSlots.outcomes}`
+);
+assert(hasDistinctInterventionClass(saunaSlots), "infrared sauna has a distinct sauna class");
+assert(
+  !hasDistinctInterventionClass({
+    ...saunaSlots,
+    intervention_class: "detoxification protocol",
+  }),
+  "vague detox class must not create a dual-grain search"
+);
+const saunaNarrow = buildPubMedQueryFromSlots(saunaSlots, "specific");
+const saunaClass = buildPubMedQueryFromSlots(saunaSlots, "class");
+assertIncludes(saunaNarrow, "infrared sauna", "narrow grain keeps infrared sauna");
+assertNotIncludes(saunaNarrow, "sessions detoxify", "do not search the slogan");
+assertNotIncludes(saunaNarrow, "detoxification", "narrow grain is not a detox protocol");
+assertIncludes(saunaClass, "sauna", "class grain searches sauna");
+assertNotIncludes(saunaClass, "detoxification", "class grain is not detoxification");
+assertNotIncludes(saunaClass, "protocol[tiab]", "do not explode protocol into a standalone term");
+assert(
+  !autoNormalizeIntervention("detoxification protocol").includes("protocol"),
+  "auto-normalize must not extract bare protocol"
+);
+
 console.log("literature-query checks passed");
 console.log("  tea topic:", teaTopic);
 console.log("  scent claim:", claimQuery);
@@ -249,3 +295,6 @@ console.log("  liver flush topic:", liverFlushTopic);
 console.log("  liver flush slots:", liverFlushSlots);
 console.log("  injury recovery topic:", injuryTopic);
 console.log("  injury recovery slots:", injurySlots);
+console.log("  sauna slots:", saunaSlots);
+console.log("  sauna narrow:", saunaNarrow);
+console.log("  sauna class:", saunaClass);
