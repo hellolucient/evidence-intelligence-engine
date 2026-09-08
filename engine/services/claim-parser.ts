@@ -10,8 +10,11 @@ import { isSpecificOutcome, sanitizeIntervention } from "@/lib/literature-query"
 
 const EXTRACTION_SYSTEM = `You are a claim extractor for longevity and health content.
 Given a raw text response, extract every discrete factual claim.
+
+CRITICAL: When extracting claims, you MUST preserve specific ingredient/intervention names exactly as they appear in the original text. Do NOT replace specific names with generic terms like "the supplement", "herbal supplements", "this intervention", "the treatment", etc.
+
 For each claim output:
-- claim_text: exact or close paraphrase of the claim. Use the user's named intervention (e.g. "hyperbaric chamber") in the sentence when the claim is about that equipment/product. Use the clinical class name (e.g. "hyperbaric oxygen therapy" / HBOT) when the claim is about the broader therapy.
+- claim_text: exact or close paraphrase of the claim. Use the user's named intervention (e.g. "hyperbaric chamber", "ashwagandha", "red light therapy") in the sentence. Use the clinical class name (e.g. "hyperbaric oxygen therapy" / HBOT, "photobiomodulation") when the claim is about the broader therapy.
 - claim_type: one of mechanistic | biomarker | lifespan_outcome | healthspan_outcome | intervention_effect | other
 - detected_certainty_level: one of strong | moderate | speculative (infer from wording: "proven", "extends lifespan" -> strong; "may", "suggests" -> moderate; "could", "might" -> speculative)
 - intervention: the treatment/food/practice/equipment this claim is about (short canonical name)
@@ -21,6 +24,11 @@ For each claim output:
 When the user named equipment (a chamber, bed, device) that delivers a therapy class (HBOT, photobiomodulation), extract claims at BOTH grains when the source text allows. Do not drop the specific grain just because the prose also used the clinical acronym.
 
 Do not use a downstream biomarker as the intervention when it is the claimed effect (red light → melatonin: intervention is red light therapy, outcome is melatonin).
+
+Examples of CORRECT intervention preservation:
+✓ "Ashwagandha may reduce cortisol levels" (not "the supplement")
+✓ "Red light therapy improves collagen" (not "the treatment")
+✓ "Metformin activates AMPK" (not "this drug")
 
 Output ONLY a valid JSON array of objects. No markdown, no explanation.`;
 
@@ -61,7 +69,7 @@ export async function extractClaims(
         topicSlots.intervention_class
           ? ` intervention_class="${topicSlots.intervention_class}"`
           : ""
-      } outcomes=${JSON.stringify(topicSlots.outcomes)}. Tag grain=specific for the named thing and grain=class for the broader therapy when both appear. Reuse that intervention unless a claim is clearly about something else.`
+      } outcomes=${JSON.stringify(topicSlots.outcomes)}. Tag grain=specific for the named thing and grain=class for the broader therapy when both appear. Reuse that intervention unless a claim is clearly about something else. CRITICAL: preserve these specific names in claim_text - do NOT replace them with generic terms.`
     : "";
   const userMessage = `Extract all factual claims from this response as a JSON array:${topicHint}\n\n${rawResponse}`;
   const out = await router.complete({

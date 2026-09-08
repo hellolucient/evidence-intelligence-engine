@@ -3,6 +3,7 @@
  */
 
 import type { SearchGrain, SearchSlots } from "@/engine/types";
+import { findIngredient, getIngredientSearchTerms } from "@/lib/ingredient-database";
 
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
@@ -383,6 +384,16 @@ function getSubjectSearchTerms(subject: string): string[] {
     terms.add("hyperbaric oxygen therapy");
     terms.add("hyperbaric chamber");
     terms.add("hbot");
+  }
+
+  // NEW: If no expansions found yet (only have the normalized term),
+  // try the comprehensive ingredient database for herbs/supplements
+  if (terms.size === 1) {
+    const ingredientTerms = getIngredientSearchTerms(normalized);
+    if (ingredientTerms.length > 1 || ingredientTerms[0] !== normalized) {
+      // Database found something useful - use it
+      return ingredientTerms;
+    }
   }
 
   return [...terms];
