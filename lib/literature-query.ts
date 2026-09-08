@@ -3,7 +3,7 @@
  */
 
 import type { SearchGrain, SearchSlots } from "@/engine/types";
-import { findIngredient, getIngredientSearchTerms } from "@/lib/ingredient-database";
+import { getIngredientSearchTerms } from "@/lib/ingredient-database";
 
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
