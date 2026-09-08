@@ -13,6 +13,7 @@ import {
   getClaimLiteratureMatchPlan,
   hasDistinctInterventionClass,
   isFolkProtocol,
+  withoutOutcomes,
 } from "@/lib/literature-query";
 import { briefAbstractSummary, ncbiEfetchAbstracts, ncbiEsearch, ncbiEsummary } from "@/lib/ncbi-eutils";
 import type { InterventionGrain, SearchSlots } from "@/engine/types";
@@ -232,6 +233,18 @@ async function searchMetaAnalyses(
   return unique.slice(0, 10);
 }
 
+function dedupeStudies(studies: Study[]): Study[] {
+  const unique: Study[] = [];
+  const seenTitles = new Set<string>();
+  for (const study of studies) {
+    const normalizedTitle = study.title.toLowerCase().trim();
+    if (!normalizedTitle || seenTitles.has(normalizedTitle)) continue;
+    seenTitles.add(normalizedTitle);
+    unique.push(study);
+  }
+  return unique;
+}
+
 function titleMatchesKeyword(title: string, keyword: string): boolean {
   return title.includes(keyword);
 }
@@ -322,21 +335,52 @@ export async function searchStudiesForTopic(
     ...pubmedRCTs.map((study) => ({ ...study, grain: "class" as const })),
     ...semanticRCTs,
   ];
-  const uniqueRCTs: Study[] = [];
-  const seenTitles = new Set<string>();
+  const uniqueRCTs = dedupeStudies(allRCTs);
 
-  for (const study of allRCTs) {
-    const normalizedTitle = study.title.toLowerCase().trim();
-    if (!seenTitles.has(normalizedTitle)) {
-      seenTitles.add(normalizedTitle);
-      uniqueRCTs.push(study);
+  const primaryStudies = [...uniqueRCTs.slice(0, 15), ...metaAnalyses.slice(0, 5)];
+  if (primaryStudies.length > 0) {
+    return {
+      rct_count: uniqueRCTs.length,
+      meta_analysis_count: metaAnalyses.length,
+      studies: primaryStudies,
+    };
+  }
+
+  // RCT/meta filters can hide observational papers that still match the claim
+  // (sauna + metals). If those are also empty, show intervention-only trials.
+  const pairingAny = await searchPubMedAnyWithSummaries(specificTerm || pubmedTerm, 12);
+  if (pairingAny.length > 0) {
+    console.info(`[EIE] pubmed pairing had 0 RCT/meta; linking ${pairingAny.length} any-type papers`);
+    return {
+      rct_count: 0,
+      meta_analysis_count: 0,
+      studies: pairingAny,
+    };
+  }
+
+  if (slots && !slots.outcome_is_broad) {
+    const fallbackQuery = buildPubMedQueryFromSlots(withoutOutcomes(slots));
+    if (fallbackQuery && fallbackQuery !== pubmedTerm) {
+      console.info(`[EIE] pubmed pairing empty; fallback study search="${fallbackQuery}"`);
+      const [fallbackRcts, fallbackAny] = await Promise.all([
+        searchPubMedWithDetails(fallbackQuery, "rct"),
+        searchPubMedAnyWithSummaries(fallbackQuery, 12),
+      ]);
+      const fallbackStudies = dedupeStudies([...fallbackRcts, ...fallbackAny]).slice(0, 15);
+      if (fallbackStudies.length > 0) {
+        return {
+          rct_count: fallbackRcts.length,
+          meta_analysis_count: 0,
+          studies: fallbackStudies,
+        };
+      }
     }
   }
 
   return {
-    rct_count: uniqueRCTs.length,
-    meta_analysis_count: metaAnalyses.length,
-    studies: [...uniqueRCTs.slice(0, 15), ...metaAnalyses.slice(0, 5)],
+    rct_count: 0,
+    meta_analysis_count: 0,
+    studies: [],
   };
 }
 
@@ -364,25 +408,31 @@ export async function searchStudiesForClaim(
     searchMetaAnalyses(pubmedTerm, plainTerm, semanticScholarKey),
   ]);
 
-  // Combine RCTs from both sources and deduplicate
-  const allRCTs = [...pubmedRCTs, ...semanticRCTs];
-  const uniqueRCTs: Study[] = [];
-  const seenTitles = new Set<string>();
-
-  for (const study of allRCTs) {
-    const normalizedTitle = study.title.toLowerCase().trim();
-    if (!seenTitles.has(normalizedTitle)) {
-      seenTitles.add(normalizedTitle);
-      uniqueRCTs.push(study);
-    }
-  }
+  const uniqueRCTs = dedupeStudies([...pubmedRCTs, ...semanticRCTs]);
 
   const filteredRcts = filterStudiesForClaim(uniqueRCTs, claimText, originalQuery, slots);
   const filteredMeta = filterStudiesForClaim(metaAnalyses, claimText, originalQuery, slots);
+  const claimStudies = [...filteredRcts.slice(0, 10), ...filteredMeta.slice(0, 3)];
+  if (claimStudies.length > 0) {
+    return {
+      rct_count: filteredRcts.length,
+      meta_analysis_count: filteredMeta.length,
+      studies: claimStudies,
+    };
+  }
+
+  const pairingAny = await searchPubMedAnyWithSummaries(pubmedTerm, 8);
+  if (pairingAny.length > 0) {
+    return {
+      rct_count: 0,
+      meta_analysis_count: 0,
+      studies: pairingAny.slice(0, 8),
+    };
+  }
 
   return {
-    rct_count: filteredRcts.length,
-    meta_analysis_count: filteredMeta.length,
-    studies: [...filteredRcts.slice(0, 10), ...filteredMeta.slice(0, 3)],
+    rct_count: 0,
+    meta_analysis_count: 0,
+    studies: [],
   };
 }

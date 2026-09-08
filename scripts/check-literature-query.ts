@@ -273,6 +273,8 @@ assertNotIncludes(saunaNarrow, "detoxification", "narrow grain is not a detox pr
 assertIncludes(saunaClass, "sauna", "class grain searches sauna");
 assertNotIncludes(saunaClass, "detoxification", "class grain is not detoxification");
 assertNotIncludes(saunaClass, "protocol[tiab]", "do not explode protocol into a standalone term");
+assertIncludes(saunaNarrow, "sweat", "heavy metals maps to sweat / excretion terms");
+assertIncludes(saunaClass, "mercury", "heavy metals maps to metals papers actually name");
 assert(
   !autoNormalizeIntervention("detoxification protocol").includes("protocol"),
   "auto-normalize must not extract bare protocol"

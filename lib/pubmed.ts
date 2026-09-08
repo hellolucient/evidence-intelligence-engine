@@ -10,6 +10,7 @@ import {
   buildTopicPubMedQuery,
   hasDistinctInterventionClass,
   isFolkProtocol,
+  withoutOutcomes,
 } from "@/lib/literature-query";
 import { ncbiEsearchCount } from "@/lib/ncbi-eutils";
 
@@ -21,7 +22,7 @@ export async function fetchPubMedSummary(
   query: string,
   slots?: SearchSlots | null
 ): Promise<PubMedSummary | null> {
-  const classQuery =
+  let classQuery =
     slots && hasDistinctInterventionClass(slots)
       ? buildPubMedQueryFromSlots(slots, "class")
       : buildTopicPubMedQuery(query, slots);
@@ -50,13 +51,43 @@ export async function fetchPubMedSummary(
     }
 
     const counts = await Promise.all(countJobs);
-    const rct_count = counts[0] ?? 0;
-    const meta_analysis_count = counts[1] ?? 0;
-    const publication_volume_last_10_years = counts[2] ?? 0;
+    let rct_count = counts[0] ?? 0;
+    let meta_analysis_count = counts[1] ?? 0;
+    let publication_volume_last_10_years = counts[2] ?? 0;
     let nextIndex = 3;
     const specific_rct_count = specificQuery ? counts[nextIndex++] : undefined;
     const specific_meta_analysis_count = specificQuery ? counts[nextIndex++] : undefined;
     const protocol_paper_count = protocolQuery ? counts[nextIndex++] : undefined;
+
+    // Pairing an uncommon outcome (e.g. "heavy metals") can zero a real intervention.
+    // Fall back to intervention-only class counts so the pool is not silently empty.
+    if (
+      slots &&
+      !slots.outcome_is_broad &&
+      rct_count === 0 &&
+      meta_analysis_count === 0
+    ) {
+      const fallbackQuery = buildPubMedQueryFromSlots(
+        withoutOutcomes(slots),
+        hasDistinctInterventionClass(slots) ? "class" : "combined"
+      );
+      if (fallbackQuery && fallbackQuery !== classQuery) {
+        const [fallbackRct, fallbackMeta, fallbackVolume] = await Promise.all([
+          ncbiEsearchCount(`(${fallbackQuery}) AND randomized controlled trial[pt]`),
+          ncbiEsearchCount(`(${fallbackQuery}) AND meta-analysis[pt]`),
+          ncbiEsearchCount(`(${fallbackQuery}) AND ("2015"[PDAT] : "2026"[PDAT])`),
+        ]);
+        if (fallbackRct > 0 || fallbackMeta > 0) {
+          console.info(
+            `[EIE] pubmed pairing empty; fallback intervention-only query="${fallbackQuery}" rct=${fallbackRct} meta=${fallbackMeta}`
+          );
+          classQuery = fallbackQuery;
+          rct_count = fallbackRct;
+          meta_analysis_count = fallbackMeta;
+          publication_volume_last_10_years = fallbackVolume;
+        }
+      }
+    }
 
     console.info(
       `[EIE] pubmed class query="${classQuery}" rct=${rct_count} meta=${meta_analysis_count} volume=${publication_volume_last_10_years}` +

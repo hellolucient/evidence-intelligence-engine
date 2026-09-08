@@ -379,7 +379,33 @@ const OUTCOME_SYNONYMS: Record<string, string[]> = {
   "recovery from injury": ["injury", "wound healing"],
   "recover from injury": ["injury", "wound healing"],
   injuries: ["injury", "wound healing"],
+  "heavy metals": [
+    "heavy metal",
+    "toxic metals",
+    "mercury",
+    "cadmium",
+    "arsenic",
+    "metal excretion",
+    "sweat",
+  ],
+  "heavy metal": [
+    "heavy metals",
+    "toxic metals",
+    "mercury",
+    "cadmium",
+    "arsenic",
+    "sweat",
+  ],
 };
+
+/** Drop outcomes so we can fall back to intervention-only literature. */
+export function withoutOutcomes(slots: SearchSlots): SearchSlots {
+  return {
+    ...slots,
+    outcomes: [],
+    outcome_is_broad: true,
+  };
+}
 
 /** Too vague to AND into a PubMed query — they match almost the entire medical literature. */
 const GENERIC_OUTCOME_WORDS = new Set([
