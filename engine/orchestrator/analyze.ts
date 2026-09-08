@@ -159,6 +159,36 @@ export async function analyze(
     generated,
     router
   );
+
+  // NEW: Do LLM-based query expansion FIRST (where we have router access)
+  // This is where actual intent understanding happens
+  let expandedQuerySlots = query_parse;
+  if (query_parse?.intervention && input.includePubmed) {
+    try {
+      const { getAllInterventionTerms } = await import("@/lib/query-expansion");
+      const { enableLLMQueryExpansion } = await import("@/lib/query-config");
+      
+      if (enableLLMQueryExpansion()) {
+        const expandedTerms = await getAllInterventionTerms(
+          query_parse.intervention,
+          router,
+          true // use LLM
+        );
+        
+        console.info(`[LLM Expansion] "${query_parse.intervention}" → [${expandedTerms.join(", ")}]`);
+        
+        // Store expanded terms in slots for query building
+        expandedQuerySlots = {
+          ...query_parse,
+          // @ts-ignore - adding expanded_terms field
+          expanded_terms: expandedTerms,
+        };
+      }
+    } catch (error) {
+      console.error("[LLM Expansion] Failed, using original slots:", error);
+    }
+  }
+
   const claims = await extractClaims(raw_response, router, query_parse);
   const evidence_flags = detectFlags(claims, evidenceMap, input.query, query_parse);
   const coherence_score = computeCoherenceScore(evidence_flags);
@@ -186,7 +216,8 @@ export async function analyze(
 
     try {
       const { searchStudiesForTopic } = await import("@/lib/study-search");
-      const topicStudies = await searchStudiesForTopic(input.query, query_parse);
+      // Use expanded slots with LLM-enhanced terms for better intent understanding
+      const topicStudies = await searchStudiesForTopic(input.query, expandedQuerySlots);
       if (topicStudies.studies.length > 0 || topicStudies.rct_count > 0) {
         topic_study_data = topicStudies;
       }
@@ -199,7 +230,8 @@ export async function analyze(
       const { searchStudiesForClaim } = await import("@/lib/study-search");
       const claimStudyPromises = claims.map(async (claim, index) => {
         try {
-          const claimSlots = claimToSearchSlots(claim, query_parse);
+          // Use expanded slots as base, then merge claim-specific slots
+          const claimSlots = claimToSearchSlots(claim, expandedQuerySlots);
           const studyData = await searchStudiesForClaim(
             claim.claim_text,
             input.query,
