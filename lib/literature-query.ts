@@ -205,9 +205,6 @@ const HEALTH_OUTCOME_TERMS = [
 const AROMA_PATTERNS =
   /\b(scent|smell|aroma|odor|odour|olfact|inhal|aromatherapy|fragrance|perfume)\b/i;
 
-const INGESTION_PATTERNS =
-  /\b(tea|drink|beverage|cup|swallow|ingest|consume|dietary|supplement)\b/i;
-
 function extractClaimOutcomeTerms(claimText: string, maxTerms = 3): string[] {
   const lower = claimText.toLowerCase();
   const outcomes: string[] = [];
