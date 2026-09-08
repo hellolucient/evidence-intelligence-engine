@@ -707,6 +707,8 @@ export function claimToSearchSlots(
     search_grain: grain,
     object_kind: topic.object_kind,
     recipe_ingredients: topic.recipe_ingredients,
+    // CRITICAL: Preserve expanded_terms from topic slots (from LLM expansion)
+    expanded_terms: topic.expanded_terms,
   };
   return applyFolkProtocol(`${topic.intervention} ${claim.intervention ?? ""}`, next);
 }
