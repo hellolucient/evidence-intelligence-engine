@@ -442,6 +442,41 @@ function getSubjectSearchTerms(subject: string): string[] {
   return [...terms];
 }
 
+/**
+ * Async version that uses LLM expansion when enabled.
+ * This is where the real intent understanding happens.
+ */
+async function getSubjectSearchTermsWithLLM(
+  subject: string,
+  router?: import("@/engine/llm/model-router").ModelRouter
+): Promise<string[]> {
+  // First try the synchronous approach (manual synonyms, etc.)
+  const syncTerms = getSubjectSearchTerms(subject);
+  
+  // If LLM expansion is disabled or no router available, use sync terms
+  const { enableLLMQueryExpansion } = await import("@/lib/query-config");
+  if (!enableLLMQueryExpansion() || !router) {
+    return syncTerms;
+  }
+  
+  // If we already found good expansions manually, use those
+  if (syncTerms.length > 3) {
+    return syncTerms;
+  }
+  
+  // Use LLM to understand intent and expand
+  try {
+    const { getAllInterventionTerms } = await import("@/lib/query-expansion");
+    const llmTerms = await getAllInterventionTerms(subject, router, true);
+    
+    // Combine manual + LLM terms
+    return [...new Set([...syncTerms, ...llmTerms])];
+  } catch (error) {
+    console.error("[LLM Expansion] Failed, using manual terms:", error);
+    return syncTerms;
+  }
+}
+
 function buildTermsSubjectClause(terms: string[]): string {
   if (terms.length === 0) return "";
 
