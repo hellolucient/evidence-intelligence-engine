@@ -180,7 +180,6 @@ export async function analyze(
         // Store expanded terms in slots for query building
         expandedQuerySlots = {
           ...query_parse,
-          // @ts-ignore - adding expanded_terms field
           expanded_terms: expandedTerms,
         };
       }

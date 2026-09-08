@@ -46,6 +46,8 @@ export interface SearchSlots {
   critic_verdict?: CriticVerdict;
   /** Ingredients named in a folk recipe (epsom salt, olive oil) — not the PubMed subject. */
   recipe_ingredients?: string[];
+  /** LLM-expanded PubMed subject terms, filled by the orchestrator when expansion is on. */
+  expanded_terms?: string[];
 }
 
 export interface ExtractedClaim {

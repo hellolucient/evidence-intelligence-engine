@@ -320,9 +320,7 @@ function getCombinedSearchTerms(slots: SearchSlots): string[] {
 }
 
 export function termsForSearchGrain(slots: SearchSlots, grain: SearchGrain): string[] {
-  // PRIORITY 1: Use LLM-expanded terms if available (from orchestrator)
-  // @ts-ignore - expanded_terms is added by orchestrator
-  if (slots.expanded_terms && Array.isArray(slots.expanded_terms) && slots.expanded_terms.length > 0) {
+  if (slots.expanded_terms && slots.expanded_terms.length > 0) {
     console.info(`[Query Building] Using LLM-expanded terms:`, slots.expanded_terms);
     return slots.expanded_terms;
   }
