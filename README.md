@@ -101,8 +101,7 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-- **Demo (guarded only):** [http://localhost:3000](http://localhost:3000)
-- **Dashboard (full transparency):** [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
+- **Dashboard:** [http://localhost:3000](http://localhost:3000)
 
 ### 4. API
 
@@ -181,8 +180,8 @@ app/                       # Next.js App Router
     claim-studies/         # POST /api/claim-studies
     menu-description/      # POST /api/menu-description
     product-description/   # POST /api/product-description
-  dashboard/               # Full transparency + study search + copy helpers
-  page.tsx                 # Demo longevity AI (guarded only)
+  dashboard/               # Redirects to /
+  page.tsx                 # Evidence Intelligence Dashboard
 engine/                    # Core evidence intelligence
   claim-extractor.ts
   certainty-alignment.ts
@@ -202,7 +201,7 @@ lib/
   supabase/server.ts       # Service-role client (server only)
   pubmed.ts                # Optional PubMed E-utilities (analyze summary)
   study-search.ts          # PubMed + Semantic Scholar (claim-studies)
-  use-analysis-state.ts    # Demo URL/query state
+  use-analysis-state.ts    # Query/result persistence across pages
 scripts/
   eie-smoke.mjs            # Parity / smoke checks
   verify-persistence-coherence.mjs  # DB-only coherence audit

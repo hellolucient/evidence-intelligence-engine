@@ -2,6 +2,10 @@
  * Shared PubMed / literature search query building.
  */
 
+import type { SearchGrain, SearchSlots } from "@/engine/types";
+import { getIngredientSearchTerms } from "@/lib/ingredient-database";
+import { autoNormalizeIntervention } from "@/lib/query-expansion";
+
 const QUERY_NOISE_WORDS = new Set([
   "energises", "energize", "energizes", "energising", "energizing",
   "benefits", "benefit", "what", "does", "can", "will", "how", "why", "when", "is", "are",
@@ -12,6 +16,16 @@ const QUERY_NOISE_WORDS = new Set([
   "there", "value", "worth", "anyone", "anybody", "someone", "something",
   "about", "into", "from", "than", "then", "also", "just", "even", "still",
   "your", "their", "they", "them", "this", "that", "these", "those",
+  "try", "our", "we", "us", "you", "youre", "guaranteed", "guarantee",
+  "come", "please", "feel", "much", "better",
+  // "for" starts the outcome in "red light therapy for injury recovery"
+  "for",
+]);
+
+/** Grammar words that must not become the PubMed subject and must not cut a phrase short. */
+const SUBJECT_FILLER_WORDS = new Set([
+  "the", "a", "an", "of", "on", "in", "to", "with", "and", "or",
+  "vs", "versus", "about", "by", "as",
 ]);
 
 const OUTCOME_VERBS = new Set([
@@ -24,12 +38,16 @@ const OUTCOME_VERBS = new Set([
   "enhance", "enhances", "enhanced", "enhancing",
   "support", "supports", "supported", "supporting",
   "promote", "promotes", "promoted", "promoting",
+  "strengthen", "strengthens", "strengthened", "strengthening",
   "extend", "extends", "extended", "extending",
   "prevent", "prevents", "prevented", "preventing",
   "cause", "causes", "caused", "causing",
   "affect", "affects", "affected", "affecting",
   "benefit", "benefits", "benefited", "benefiting",
   "optimize", "optimizes", "optimized", "optimizing",
+  "detoxify", "detoxifies", "detoxified", "detoxifying",
+  "remove", "removes", "removed", "removing",
+  "eliminate", "eliminates", "eliminated", "eliminating",
 ]);
 
 const CLAIM_STOP_WORDS = new Set([
@@ -52,7 +70,7 @@ function normalizeToken(word: string): string {
 }
 
 function tokenize(text: string): string[] {
-  return text
+  return normalizeQueryText(text)
     .replace(/\?/g, " ")
     .split(/\s+/)
     .map(normalizeToken)
@@ -80,14 +98,361 @@ const SUBJECT_SYNONYMS: Record<string, string[]> = {
   "herbal tea": ["tea", "herbal"],
   "chamomile tea": ["chamomile", "tea"],
   "valerian tea": ["valerian", "tea"],
+  "red light therapy": [
+    "red light",
+    "photobiomodulation",
+    "low-level light therapy",
+    "low-level laser",
+    "lllt",
+  ],
+  "red light": [
+    "red light therapy",
+    "photobiomodulation",
+    "low-level light therapy",
+  ],
+  "hyperbaric chamber": [
+    "hyperbaric oxygen",
+    "hyperbaric oxygen therapy",
+    "hyperbaric oxygenation",
+    "hbot",
+  ],
+  "hyperbaric": [
+    "hyperbaric oxygen",
+    "hyperbaric oxygen therapy",
+    "hyperbaric chamber",
+    "hbot",
+  ],
+  hbot: ["hyperbaric oxygen", "hyperbaric oxygen therapy", "hyperbaric chamber"],
+  "whole-body cryotherapy": [
+    "whole body cryotherapy",
+    "cryotherapy",
+    "cold therapy",
+    "wbc",
+  ],
+  "whole body cryotherapy": [
+    "whole-body cryotherapy",
+    "cryotherapy",
+    "cold therapy",
+    "wbc",
+  ],
+  "cryotherapy": [
+    "whole body cryotherapy",
+    "cold therapy",
+    "cryotherapies",
+  ],
+  "cold showers": [
+    "cold shower",
+    "cold water immersion",
+    "cold exposure",
+    "cold water therapy",
+  ],
+  "cold shower": [
+    "cold showers",
+    "cold water immersion",
+    "cold exposure",
+  ],
+  "daily cold showers": [
+    "cold showers",
+    "cold water immersion",
+    "cold exposure",
+  ],
+  "liver flush": ["liver cleanse", "gallbladder flush", "gallbladder cleanse"],
+  "liver cleanse": ["liver flush", "gallbladder flush", "gallbladder cleanse"],
+  "colon cleanse": ["colon flush", "colonic irrigation"],
+  "infrared sauna": [
+    "far infrared sauna",
+    "far-infrared sauna",
+    "infrared sauna therapy",
+    "waon therapy",
+  ],
+  "far infrared sauna": [
+    "infrared sauna",
+    "far-infrared sauna",
+    "waon therapy",
+  ],
+  sauna: ["sauna bathing", "sauna therapy", "finnish sauna"],
 };
+
+/**
+ * Named equipment/product → broader therapy or compound class.
+ * Used so we can search and reason at both grains instead of collapsing one into the other.
+ */
+const INTERVENTION_CLASS: Record<string, string> = {
+  "hyperbaric chamber": "hyperbaric oxygen therapy",
+  "hyperbaric cabin": "hyperbaric oxygen therapy",
+  hbot: "hyperbaric oxygen therapy",
+  "jasmine tea": "green tea",
+  "red light therapy": "photobiomodulation",
+  "red light": "photobiomodulation",
+  "infrared sauna": "sauna",
+  "far infrared sauna": "sauna",
+  "far-infrared sauna": "sauna",
+};
+
+type FolkProtocol = {
+  name: string;
+  synonyms: string[];
+  /** High-precision PubMed phrases. Bare "liver flush" matches transplant flush solutions. */
+  searchTerms: string[];
+  forbiddenClasses: string[];
+};
+
+const FOLK_PROTOCOLS: FolkProtocol[] = [
+  {
+    name: "liver flush",
+    synonyms: ["liver flush", "liver cleanse", "gallbladder flush", "gallbladder cleanse", "liver detox"],
+    searchTerms: ["gallbladder flush", "liver and gallbladder flush"],
+    forbiddenClasses: ["detoxification", "detox", "detoxification therapy"],
+  },
+  {
+    name: "colon cleanse",
+    synonyms: ["colon cleanse", "colon flush", "colonic irrigation"],
+    searchTerms: ["colon cleanse", "colonic irrigation", "coffee enema"],
+    forbiddenClasses: ["detoxification", "detox"],
+  },
+];
+
+const RECIPE_INGREDIENTS = ["epsom salt", "olive oil", "lemon juice", "grapefruit", "apple juice", "coffee"];
+
+function haystackHasPhrase(haystack: string, phrase: string): boolean {
+  return haystack.includes(phrase);
+}
+
+export function detectFolkProtocol(text: string): FolkProtocol | undefined {
+  const haystack = normalizeQueryText(text).toLowerCase();
+  let best: FolkProtocol | undefined;
+  let bestLen = 0;
+  for (const protocol of FOLK_PROTOCOLS) {
+    for (const synonym of [protocol.name, ...protocol.synonyms]) {
+      if (haystackHasPhrase(haystack, synonym) && synonym.length > bestLen) {
+        best = protocol;
+        bestLen = synonym.length;
+      }
+    }
+  }
+  return best;
+}
+
+export function isFolkProtocol(slots: SearchSlots | null | undefined): boolean {
+  if (!slots) return false;
+  if (slots.object_kind === "protocol" && detectFolkProtocol(slots.intervention)) return true;
+  return Boolean(detectFolkProtocol(`${slots.intervention} ${slots.intervention_class ?? ""}`));
+}
+
+export function extractRecipeIngredients(query: string): string[] {
+  const haystack = normalizeQueryText(query).toLowerCase();
+  return RECIPE_INGREDIENTS.filter((ingredient) => haystack.includes(ingredient));
+}
+
+/** Folk recipes search the protocol, not glued ingredients and not generic "detoxification". */
+export function applyFolkProtocol(query: string, slots: SearchSlots): SearchSlots {
+  const folk = detectFolkProtocol(`${query} ${slots.intervention} ${slots.intervention_class ?? ""}`);
+  if (!folk) return slots;
+  const className = (slots.intervention_class ?? "").toLowerCase().trim();
+  const classIsForbidden =
+    !className ||
+    className === folk.name ||
+    folk.forbiddenClasses.some((item) => className === item || className.includes(item));
+  return {
+    ...slots,
+    intervention: folk.name,
+    intervention_class: classIsForbidden ? undefined : undefined,
+    object_kind: "protocol",
+    recipe_ingredients: slots.recipe_ingredients?.length
+      ? slots.recipe_ingredients
+      : extractRecipeIngredients(query),
+    search_grain: undefined,
+  };
+}
+
+export function buildProtocolOnlyPubMedQuery(slots: SearchSlots): string {
+  return buildPubMedQueryFromSlots({
+    ...slots,
+    outcomes: [],
+    outcome_is_broad: true,
+    search_grain: "combined",
+  });
+}
+
+/** Device/form terms that stay at the narrow grain (do not expand to the whole class). */
+const SPECIFIC_EQUIPMENT_TERMS: Record<string, string[]> = {
+  "hyperbaric chamber": [
+    "hyperbaric chamber",
+    "hyperbaric cabin",
+    "monoplace chamber",
+    "multiplace chamber",
+    "mild hyperbaric",
+  ],
+  "infrared sauna": [
+    "infrared sauna",
+    "far infrared sauna",
+    "far-infrared sauna",
+    "infrared cabin",
+    "waon therapy",
+  ],
+};
+
+export function resolveInterventionClass(intervention: string): string | undefined {
+  const normalized = intervention.toLowerCase().trim();
+  if (!normalized) return undefined;
+  if (INTERVENTION_CLASS[normalized]) {
+    const className = INTERVENTION_CLASS[normalized];
+    if (className.toLowerCase() === normalized || isVagueInterventionClass(className)) {
+      return undefined;
+    }
+    return className;
+  }
+  for (const [key, className] of Object.entries(INTERVENTION_CLASS)) {
+    if (normalized.includes(key) && className.toLowerCase() !== normalized) {
+      return isVagueInterventionClass(className) ? undefined : className;
+    }
+  }
+  return undefined;
+}
+
+export function hasDistinctInterventionClass(slots: SearchSlots | null | undefined): boolean {
+  if (isFolkProtocol(slots)) return false;
+  const named = slots?.intervention?.trim().toLowerCase() ?? "";
+  const className = slots?.intervention_class?.trim().toLowerCase() ?? "";
+  if (!named || !className || named === className) return false;
+  return !isVagueInterventionClass(className);
+}
+
+export function getNarrowSearchTerms(intervention: string): string[] {
+  const folk = detectFolkProtocol(intervention) || FOLK_PROTOCOLS.find((protocol) => protocol.name === intervention.toLowerCase().trim());
+  if (folk) return [...folk.searchTerms];
+  const normalized = intervention.toLowerCase().trim();
+  if (!normalized) return [];
+  for (const [key, terms] of Object.entries(SPECIFIC_EQUIPMENT_TERMS)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return [...new Set([normalized, ...terms])];
+    }
+  }
+  return [normalized];
+}
+
+function getClassSearchTerms(slots: SearchSlots): string[] {
+  const className = slots.intervention_class || slots.intervention;
+  const classTerms = getSubjectSearchTerms(className);
+  if (!hasDistinctInterventionClass(slots)) return classTerms;
+  const narrow = new Set(getNarrowSearchTerms(slots.intervention).map((term) => term.toLowerCase()));
+  const filtered = classTerms.filter((term) => !narrow.has(term.toLowerCase()));
+  return filtered.length > 0 ? filtered : classTerms;
+}
+
+function getCombinedSearchTerms(slots: SearchSlots): string[] {
+  return [...new Set([
+    ...getNarrowSearchTerms(slots.intervention),
+    ...getSubjectSearchTerms(slots.intervention),
+    ...(slots.intervention_class ? getSubjectSearchTerms(slots.intervention_class) : []),
+  ])];
+}
+
+export function termsForSearchGrain(slots: SearchSlots, grain: SearchGrain): string[] {
+  if (grain === "specific") {
+    const narrow = getNarrowSearchTerms(slots.intervention);
+    if (!slots.expanded_terms?.length) return narrow;
+    return [...new Set([...narrow, ...slots.expanded_terms])];
+  }
+  if (grain === "class") return getClassSearchTerms(slots);
+  const combined = getCombinedSearchTerms(slots);
+  if (!slots.expanded_terms?.length) return combined;
+  return [...new Set([...combined, ...slots.expanded_terms])];
+}
+
+/** Consumer outcome phrases → terms papers actually use. */
+const OUTCOME_SYNONYMS: Record<string, string[]> = {
+  "energy levels": ["fatigue", "energy"],
+  energy: ["fatigue"],
+  "immune system": ["immune", "immunity"],
+  immune: ["immune", "immunity"],
+  immunity: ["immune", "immunity"],
+  "anti-aging": ["aging", "collagen", "skin"],
+  antiaging: ["aging", "collagen", "skin"],
+  "anti aging": ["aging", "collagen", "skin"],
+  "collagen synthesis": ["collagen"],
+  collagen: ["collagen"],
+  "skin glow": ["skin", "collagen"],
+  complexion: ["skin"],
+  "skin complexion": ["skin", "complexion"],
+  "injury recovery": ["injury", "wound healing"],
+  "recovery from injury": ["injury", "wound healing"],
+  "recover from injury": ["injury", "wound healing"],
+  injuries: ["injury", "wound healing"],
+  "heavy metals": [
+    "heavy metal",
+    "toxic metals",
+    "mercury",
+    "cadmium",
+    "arsenic",
+    "metal excretion",
+    "sweat",
+  ],
+  "heavy metal": [
+    "heavy metals",
+    "toxic metals",
+    "mercury",
+    "cadmium",
+    "arsenic",
+    "sweat",
+  ],
+};
+
+/** Drop outcomes so we can fall back to intervention-only literature. */
+export function withoutOutcomes(slots: SearchSlots): SearchSlots {
+  return {
+    ...slots,
+    outcomes: [],
+    outcome_is_broad: true,
+  };
+}
+
+/** Too vague to AND into a PubMed query — they match almost the entire medical literature. */
+const GENERIC_OUTCOME_WORDS = new Set([
+  "light",
+  "therapy",
+  "treatment",
+  "treatments",
+  "device",
+  "effect",
+  "effects",
+  "quality",
+  "health",
+  "wellbeing",
+  "overall",
+]);
+
+const TRAILING_PRODUCT_WORDS = new Set([
+  "bed", "device", "machine", "product", "kit", "panel", "lamp", "mask",
+  "session", "sessions",
+  "treatment", "treatments",
+]);
+
+const SHORT_SUBJECT_ACRONYMS = new Set(["pbm", "lllt", "hbot"]);
+
+/** Expand closed compounds and light punctuation so marketing copy is searchable. */
+export function normalizeQueryText(text: string): string {
+  return text
+    .replace(/\bredlight\b/gi, "red light")
+    .replace(/\bhyberbaric\b/gi, "hyperbaric")
+    .replace(/\bwil\b/gi, "will")
+    .replace(/\bnear[-]?infrared\b/gi, "near infrared")
+    .replace(/you're/gi, "you are")
+    .replace(/['’]/g, " ");
+}
 
 function getSubjectSearchTerms(subject: string): string[] {
   const normalized = subject.toLowerCase().trim();
   if (!normalized) return [];
 
+  const folk = detectFolkProtocol(normalized) || FOLK_PROTOCOLS.find((protocol) => protocol.name === normalized);
+  if (folk) {
+    return [...new Set(folk.searchTerms)];
+  }
+
   const terms = new Set<string>([normalized]);
 
+  // Manual synonyms (highest priority - domain expert knowledge)
   for (const [key, synonyms] of Object.entries(SUBJECT_SYNONYMS)) {
     if (normalized.includes(key) || key.includes(normalized)) {
       terms.add(key);
@@ -105,21 +470,95 @@ function getSubjectSearchTerms(subject: string): string[] {
     }
   }
 
+  if (normalized.includes("red light") || normalized.includes("photobiomodulation")) {
+    terms.add("red light");
+    terms.add("red light therapy");
+    terms.add("photobiomodulation");
+  }
+
+  if (normalized.includes("hyperbaric") || normalized === "hbot") {
+    terms.add("hyperbaric oxygen");
+    terms.add("hyperbaric oxygen therapy");
+    terms.add("hyperbaric chamber");
+    terms.add("hbot");
+  }
+
+  // Automatic normalization (handles hyphens, plurals, etc.)
+  // Only apply if we haven't found manual expansions
+  if (terms.size === 1) {
+    for (const autoTerm of autoNormalizeIntervention(normalized)) {
+      terms.add(autoTerm);
+    }
+  }
+
+  // Ingredient database (for supplements not manually coded)
+  // Only apply if still no expansions found
+  if (terms.size <= 3) { // Allow some auto-normalized terms
+    const ingredientTerms = getIngredientSearchTerms(normalized);
+    if (ingredientTerms.length > 1 || ingredientTerms[0] !== normalized) {
+      // Database found something useful - use it
+      return ingredientTerms;
+    }
+  }
+
   return [...terms];
 }
 
-/** Build a PubMed subject clause, OR-ing synonyms when helpful. */
-export function buildSubjectPubMedClause(subject: string): string {
-  const terms = getSubjectSearchTerms(subject);
+/**
+ * Async version that uses LLM expansion when enabled.
+ * This is where the real intent understanding happens.
+ */
+export async function getSubjectSearchTermsWithLLM(
+  subject: string,
+  router?: import("@/engine/llm/model-router").ModelRouter
+): Promise<string[]> {
+  // First try the synchronous approach (manual synonyms, etc.)
+  const syncTerms = getSubjectSearchTerms(subject);
+  
+  // If LLM expansion is disabled or no router available, use sync terms
+  const { enableLLMQueryExpansion } = await import("@/lib/query-config");
+  if (!enableLLMQueryExpansion() || !router) {
+    return syncTerms;
+  }
+  
+  // If we already found good expansions manually, use those
+  if (syncTerms.length > 3) {
+    return syncTerms;
+  }
+  
+  // Use LLM to understand intent and expand
+  try {
+    const { getAllInterventionTerms } = await import("@/lib/query-expansion");
+    const llmTerms = await getAllInterventionTerms(subject, router, true);
+    
+    // Combine manual + LLM terms
+    return [...new Set([...syncTerms, ...llmTerms])];
+  } catch (error) {
+    console.error("[LLM Expansion] Failed, using manual terms:", error);
+    return syncTerms;
+  }
+}
+
+function buildTermsSubjectClause(terms: string[]): string {
   if (terms.length === 0) return "";
 
   const clauses = terms
+    .filter((term) => {
+      const compact = term.replace(/\s+/g, "").toLowerCase();
+      return compact.length >= 4 || SHORT_SUBJECT_ACRONYMS.has(compact);
+    })
     .map((term) => quotePubMedPhrase(term))
     .filter(Boolean);
 
   const unique = [...new Set(clauses)];
+  if (unique.length === 0) return "";
   if (unique.length === 1) return unique[0];
   return `(${unique.join(" OR ")})`;
+}
+
+/** Build a PubMed subject clause, OR-ing synonyms when helpful. */
+export function buildSubjectPubMedClause(subject: string): string {
+  return buildTermsSubjectClause(getSubjectSearchTerms(subject));
 }
 
 /**
@@ -127,7 +566,10 @@ export function buildSubjectPubMedClause(subject: string): string {
  * e.g. "jasmine tea will improve your sleep" -> "jasmine tea"
  */
 export function extractPrimarySubject(query: string): string {
-  const words = query
+  const folk = detectFolkProtocol(query);
+  if (folk) return folk.name;
+
+  const words = normalizeQueryText(query)
     .replace(/\?/g, "")
     .trim()
     .split(/\s+/)
@@ -138,7 +580,11 @@ export function extractPrimarySubject(query: string): string {
     const token = normalizeToken(word);
     if (!token) continue;
 
-    if (OUTCOME_VERBS.has(token)) break;
+    if (OUTCOME_VERBS.has(token)) {
+      if (meaningful.length > 0) break;
+      continue;
+    }
+    if (SUBJECT_FILLER_WORDS.has(token)) continue;
 
     if (QUERY_NOISE_WORDS.has(token)) {
       if (meaningful.length > 0) break;
@@ -149,51 +595,91 @@ export function extractPrimarySubject(query: string): string {
     if (meaningful.length >= 4) break;
   }
 
+  while (meaningful.length > 0) {
+    const last = normalizeToken(meaningful[meaningful.length - 1] ?? "");
+    if (!TRAILING_PRODUCT_WORDS.has(last)) break;
+    meaningful.pop();
+  }
+
   return meaningful.join(" ").trim();
 }
 
-/**
- * Extract likely health outcome terms from query or claim text.
- */
-export function extractOutcomeTerms(text: string, maxTerms = 2): string[] {
-  const tokens = tokenize(text);
-  const outcomes: string[] = [];
+/** Classes that are marketing buckets, not PubMed search subjects. */
+const VAGUE_INTERVENTION_CLASSES = new Set([
+  "detoxification",
+  "detox",
+  "detoxification protocol",
+  "detoxification therapy",
+  "detox protocol",
+  "protocol",
+  "therapy",
+  "treatment",
+  "wellness",
+  "health",
+  "supplement",
+  "intervention",
+]);
 
-  const verbIndex = tokens.findIndex((token) => OUTCOME_VERBS.has(token));
-  const searchTokens = verbIndex >= 0 ? tokens.slice(verbIndex + 1) : tokens;
-
-  for (const token of searchTokens) {
-    if (CLAIM_STOP_WORDS.has(token)) continue;
-    if (token.length < 4) continue;
-    if (!outcomes.includes(token)) {
-      outcomes.push(token);
-    }
-    if (outcomes.length >= maxTerms) break;
-  }
-
-  return outcomes;
+export function isVagueInterventionClass(name: string | undefined): boolean {
+  const normalized = (name ?? "").toLowerCase().trim();
+  if (!normalized) return true;
+  if (VAGUE_INTERVENTION_CLASSES.has(normalized)) return true;
+  return /\b(detox|detoxification)\b/.test(normalized);
 }
 
-/**
- * Build a PubMed search query from a user question.
- */
-export function buildTopicPubMedQuery(query: string): string {
-  const subject = extractPrimarySubject(query);
-  const outcomes = extractOutcomeTerms(query);
+export function sanitizeIntervention(text: string): string {
+  const normalized = normalizeQueryText(text).replace(/\?/g, "").trim();
+  if (!normalized) return "";
 
-  const parts: string[] = [];
-  if (subject) parts.push(buildSubjectPubMedClause(subject));
-  for (const outcome of outcomes) {
-    const quoted = quotePubMedPhrase(outcome);
-    if (quoted && !parts.includes(quoted)) parts.push(quoted);
+  const kept: string[] = [];
+  for (const word of normalized.split(/\s+/)) {
+    const token = normalizeToken(word);
+    if (!token) continue;
+    if (OUTCOME_VERBS.has(token)) {
+      if (kept.length > 0) break;
+      continue;
+    }
+    kept.push(word);
   }
 
-  if (parts.length === 0) {
-    const fallback = tokenize(query).slice(0, 3).join(" ");
-    return buildSubjectPubMedClause(fallback) || quotePubMedPhrase("longevity");
+  while (kept.length > 0) {
+    const last = normalizeToken(kept[kept.length - 1] ?? "");
+    if (!TRAILING_PRODUCT_WORDS.has(last)) break;
+    kept.pop();
   }
 
-  return parts.join(" AND ");
+  const cleaned = kept.join(" ").trim();
+  if (!cleaned || kept.length > 6) {
+    return extractPrimarySubject(normalized);
+  }
+  return cleaned;
+}
+
+const VAGUE_OUTCOME_PHRASES = new Set([
+  ...GENERIC_OUTCOME_WORDS,
+  "better",
+  "wellness",
+  "energy",
+  "feel",
+  "feeling",
+  "wellbeing",
+  "well-being",
+  "health",
+]);
+
+export function isSpecificOutcome(term: string): boolean {
+  const normalized = term.trim().toLowerCase();
+  if (!normalized) return false;
+  if (VAGUE_OUTCOME_PHRASES.has(normalized)) return false;
+  if (HEALTH_OUTCOME_TERMS.includes(normalized)) return true;
+  return normalized.length >= 4 && !GENERIC_OUTCOME_WORDS.has(normalized);
+}
+
+function joinOrClauses(clauses: string[]): string {
+  const unique = [...new Set(clauses.filter(Boolean))];
+  if (unique.length === 0) return "";
+  if (unique.length === 1) return unique[0];
+  return `(${unique.join(" OR ")})`;
 }
 
 const HEALTH_OUTCOME_TERMS = [
@@ -211,10 +697,167 @@ const HEALTH_OUTCOME_TERMS = [
   "blood pressure",
   "heart rate",
   "cortisol",
-  "health",
-  "wellbeing",
-  "well-being",
+  "melatonin",
+  "circadian",
+  "inflammation",
+  "immune",
+  "immunity",
+  "collagen",
+  "aging",
+  "fatigue",
+  "skin complexion",
+  "complexion",
+  "skin",
+  "injury recovery",
+  "wound healing",
+  "injury",
+  "heavy metals",
+  "heavy metal",
 ];
+
+const VAGUE_HEALTH_OUTCOMES = new Set(["health", "wellbeing", "well-being"]);
+
+/**
+ * Extract likely health outcome terms from query or claim text.
+ * Prefer known health outcomes (sleep, melatonin, …) over leftover subject words
+ * like "therapy" / "redlight", which would AND-match almost all of PubMed.
+ */
+export function extractOutcomeTerms(text: string, maxTerms = 2, subject = ""): string[] {
+  const normalized = normalizeQueryText(text).toLowerCase();
+  const outcomes: string[] = [];
+  const subjectTokens = new Set(tokenize(subject));
+
+  for (const term of HEALTH_OUTCOME_TERMS) {
+    if (VAGUE_HEALTH_OUTCOMES.has(term)) continue;
+    if (!normalized.includes(term)) continue;
+    const label = term === "antioxidants" ? "antioxidant" : term;
+    if (!outcomes.includes(label)) outcomes.push(label);
+    if (outcomes.length >= maxTerms) return outcomes;
+  }
+
+  if (outcomes.length > 0) return outcomes;
+
+  const tokens = tokenize(text);
+  const verbIndex = tokens.findIndex((token) => OUTCOME_VERBS.has(token));
+  const searchTokens = verbIndex >= 0 ? tokens.slice(verbIndex + 1) : tokens;
+
+  for (const token of searchTokens) {
+    if (CLAIM_STOP_WORDS.has(token)) continue;
+    if (GENERIC_OUTCOME_WORDS.has(token)) continue;
+    if (subjectTokens.has(token)) continue;
+    if (token.length < 4) continue;
+    if (!outcomes.includes(token)) {
+      outcomes.push(token);
+    }
+    if (outcomes.length >= maxTerms) break;
+  }
+
+  return outcomes;
+}
+
+/**
+ * Build a PubMed search query from a user question.
+ */
+export function heuristicSearchSlots(query: string): SearchSlots {
+  const intervention = extractPrimarySubject(query);
+  const outcomes = extractOutcomeTerms(query, 2, intervention).filter(isSpecificOutcome);
+  const lower = query.toLowerCase();
+  const marketing = /\b(try our|guaranteed|buy now|order now)\b/i.test(query);
+  const question = /\?/.test(query) || /^(what|does|can|how|is|are|why)\b/i.test(lower.trim());
+  const intervention_class = resolveInterventionClass(intervention);
+  const base: SearchSlots = {
+    intervention,
+    intervention_class,
+    outcomes,
+    frame: marketing ? "marketing" : question ? "question" : "claim",
+    outcome_is_broad: outcomes.length === 0,
+  };
+  return applyFolkProtocol(query, base);
+}
+
+export function claimToSearchSlots(
+  claim: { intervention?: string; outcome?: string; grain?: "specific" | "class" },
+  topic: SearchSlots
+): SearchSlots {
+  const grain = claim.grain;
+  const intervention =
+    grain === "class"
+      ? sanitizeIntervention(claim.intervention ?? "") ||
+        topic.intervention_class ||
+        topic.intervention
+      : sanitizeIntervention(claim.intervention ?? "") || topic.intervention;
+  const outcome =
+    claim.outcome && isSpecificOutcome(claim.outcome)
+      ? claim.outcome.trim().toLowerCase()
+      : undefined;
+  const outcomes = outcome ? [outcome] : topic.outcomes;
+  const next: SearchSlots = {
+    intervention,
+    intervention_class: topic.intervention_class || resolveInterventionClass(intervention),
+    outcomes,
+    population: topic.population,
+    frame: topic.frame,
+    outcome_is_broad: outcomes.length === 0,
+    search_grain: grain,
+    object_kind: topic.object_kind,
+    recipe_ingredients: topic.recipe_ingredients,
+    // CRITICAL: Preserve expanded_terms from topic slots (from LLM expansion)
+    expanded_terms: topic.expanded_terms,
+  };
+  return applyFolkProtocol(`${topic.intervention} ${claim.intervention ?? ""}`, next);
+}
+
+function lookupOutcomeSynonyms(outcome: string): string[] | undefined {
+  const normalized = outcome.toLowerCase().trim();
+  if (!normalized) return undefined;
+  if (OUTCOME_SYNONYMS[normalized]) return OUTCOME_SYNONYMS[normalized];
+  for (const [key, synonyms] of Object.entries(OUTCOME_SYNONYMS)) {
+    if (normalized.includes(key) || key.includes(normalized)) return synonyms;
+  }
+  return undefined;
+}
+
+function expandOutcomesForPubMed(outcomes: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const outcome of outcomes.filter(isSpecificOutcome).slice(0, 3)) {
+    const normalized = outcome.toLowerCase().trim();
+    const mapped = lookupOutcomeSynonyms(normalized);
+    const terms = mapped ?? [normalized];
+    for (const term of terms) {
+      const cleaned = term.toLowerCase().trim();
+      if (!cleaned || GENERIC_OUTCOME_WORDS.has(cleaned) || VAGUE_HEALTH_OUTCOMES.has(cleaned)) {
+        continue;
+      }
+      // Mapped scientific terms (fatigue, immune) can be shorter/broader than the
+      // consumer phrase they came from; unmapped leftovers still need to be specific.
+      if (!mapped && !isSpecificOutcome(cleaned)) continue;
+      expanded.add(cleaned);
+    }
+  }
+  return [...expanded];
+}
+
+export function buildPubMedQueryFromSlots(
+  slots: SearchSlots,
+  grain: SearchGrain = slots.search_grain ?? "combined"
+): string {
+  if (!slots.intervention) return "";
+  const subjectClause = buildTermsSubjectClause(termsForSearchGrain(slots, grain));
+  const specificOutcomes = slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes);
+  const outcomeClause = joinOrClauses(specificOutcomes.map((outcome) => quotePubMedPhrase(outcome)));
+  return [subjectClause, outcomeClause].filter(Boolean).join(" AND ");
+}
+
+export function slotsToPlainQuery(slots: SearchSlots, grain: SearchGrain = slots.search_grain ?? "combined"): string {
+  const subjects = termsForSearchGrain(slots, grain).slice(0, grain === "specific" ? 3 : 4);
+  const outcomes = slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes);
+  return [...subjects, ...outcomes.slice(0, 3)].filter(Boolean).join(" ").trim();
+}
+
+export function buildTopicPubMedQuery(query: string, slots?: SearchSlots | null): string {
+  const resolved = slots?.intervention ? slots : heuristicSearchSlots(query);
+  return buildPubMedQueryFromSlots(resolved) || quotePubMedPhrase("longevity");
+}
 
 const AROMA_PATTERNS =
   /\b(scent|smell|aroma|odor|odour|olfact|inhal|aromatherapy|fragrance|perfume)\b/i;
@@ -253,27 +896,62 @@ const SUBSTANCE_TERMS = [
   "egcg",
 ];
 
-function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
-  const lower = claimText.toLowerCase();
+function extractInterventionTerms(text: string): string[] {
+  const normalized = normalizeQueryText(text).toLowerCase();
   const terms = new Set<string>();
 
-  for (const substance of SUBSTANCE_TERMS) {
-    if (lower.includes(substance)) {
-      terms.add(substance === "l-theanine" ? "theanine" : substance.replace(/s$/, ""));
+  for (const [key, synonyms] of Object.entries(SUBJECT_SYNONYMS)) {
+    if (!normalized.includes(key)) continue;
+    terms.add(key);
+    for (const synonym of synonyms) terms.add(synonym);
+  }
+
+  if (normalized.includes("red light") || normalized.includes("photobiomodulation")) {
+    terms.add("red light");
+    terms.add("red light therapy");
+    terms.add("photobiomodulation");
+  }
+
+  if (normalized.includes("hyperbaric") || normalized === "hbot") {
+    terms.add("hyperbaric oxygen");
+    terms.add("hyperbaric oxygen therapy");
+    terms.add("hyperbaric chamber");
+    terms.add("hbot");
+  }
+
+  return [...terms];
+}
+
+function extractClaimSubjectTerms(claimText: string, originalQuery: string): string[] {
+  const lower = normalizeQueryText(claimText).toLowerCase();
+  const terms = new Set<string>();
+
+  for (const intervention of extractInterventionTerms(`${claimText} ${originalQuery}`)) {
+    terms.add(intervention);
+  }
+
+  // Substances are the subject only when no intervention (tea, red light, etc.) was found.
+  if (terms.size === 0) {
+    for (const substance of SUBSTANCE_TERMS) {
+      if (lower.includes(substance)) {
+        terms.add(substance === "l-theanine" ? "theanine" : substance.replace(/s$/, ""));
+      }
     }
   }
 
-  if (lower.includes("jasmine")) {
+  if (lower.includes("jasmine") || originalQuery.toLowerCase().includes("jasmine")) {
     terms.add("jasmine");
   }
 
   if (AROMA_PATTERNS.test(lower)) {
-    terms.add("jasmine");
-    terms.add("jasmine oil");
     terms.add("aromatherapy");
+    if (lower.includes("jasmine") || originalQuery.toLowerCase().includes("jasmine")) {
+      terms.add("jasmine");
+      terms.add("jasmine oil");
+    }
   }
 
-  if (INGESTION_PATTERNS.test(lower)) {
+  if (terms.size === 0 && INGESTION_PATTERNS.test(lower)) {
     for (const term of getSubjectSearchTerms(extractPrimarySubject(originalQuery))) {
       terms.add(term);
     }
@@ -288,19 +966,41 @@ function extractClaimSubjectTerms(claimText: string, originalQuery: string): str
   return [...terms];
 }
 
+function isUsableKeyword(keyword: string): boolean {
+  return keyword.length >= 4 || SHORT_SUBJECT_ACRONYMS.has(keyword);
+}
+
+export function getClaimLiteratureMatchPlan(
+  claimText: string,
+  originalQuery: string,
+  slots?: SearchSlots | null
+): { subjects: string[]; outcomes: string[] } {
+  if (slots?.intervention) {
+    const grain: SearchGrain = slots.search_grain ?? "combined";
+    const subjects = termsForSearchGrain(slots, grain)
+      .map((term) => term.toLowerCase())
+      .filter(isUsableKeyword);
+    const outcomes = (slots.outcome_is_broad ? [] : expandOutcomesForPubMed(slots.outcomes))
+      .map((term) => term.toLowerCase())
+      .filter(isUsableKeyword);
+    return { subjects, outcomes };
+  }
+  const subjects = extractClaimSubjectTerms(claimText, originalQuery)
+    .map((term) => term.toLowerCase())
+    .filter(isUsableKeyword);
+  const outcomes = extractClaimOutcomeTerms(claimText, 5)
+    .map((term) => term.toLowerCase())
+    .filter(isUsableKeyword);
+  return { subjects, outcomes };
+}
+
 /** Keywords used to match fetched papers back to a specific claim. */
 export function getClaimLiteratureKeywords(
   claimText: string,
   originalQuery: string
 ): string[] {
-  const keywords = new Set<string>();
-  for (const term of extractClaimSubjectTerms(claimText, originalQuery)) {
-    keywords.add(term.toLowerCase());
-  }
-  for (const term of extractClaimOutcomeTerms(claimText, 5)) {
-    keywords.add(term.toLowerCase());
-  }
-  return [...keywords].filter((keyword) => keyword.length >= 4);
+  const { subjects, outcomes } = getClaimLiteratureMatchPlan(claimText, originalQuery);
+  return [...new Set([...subjects, ...outcomes])];
 }
 
 function buildTermsPubMedClause(terms: string[]): string {
@@ -313,10 +1013,17 @@ function buildTermsPubMedClause(terms: string[]): string {
 /**
  * Build a PubMed search query for a specific claim.
  */
-export function buildClaimPubMedQuery(claimText: string, originalQuery: string): string {
+export function buildClaimPubMedQuery(
+  claimText: string,
+  originalQuery: string,
+  slots?: SearchSlots | null
+): string {
+  if (slots?.intervention) {
+    return buildPubMedQueryFromSlots(slots) || buildTopicPubMedQuery(originalQuery);
+  }
   const subjectTerms = extractClaimSubjectTerms(claimText, originalQuery);
-  const claimOutcomes = extractClaimOutcomeTerms(claimText);
-  const queryOutcomes = extractOutcomeTerms(originalQuery);
+  const claimOutcomes = extractClaimOutcomeTerms(claimText).filter(isSpecificOutcome);
+  const queryOutcomes = extractOutcomeTerms(originalQuery).filter(isSpecificOutcome);
   const outcomes = [...claimOutcomes];
   if (outcomes.length === 0) {
     for (const outcome of queryOutcomes) {
@@ -327,14 +1034,11 @@ export function buildClaimPubMedQuery(claimText: string, originalQuery: string):
     }
   }
 
-  const parts: string[] = [];
   const subjectClause = buildTermsPubMedClause(subjectTerms);
-  if (subjectClause) parts.push(subjectClause);
-
-  for (const outcome of outcomes.slice(0, 3)) {
-    const quoted = quotePubMedPhrase(outcome);
-    if (quoted && !parts.includes(quoted)) parts.push(quoted);
-  }
+  const outcomeClause = joinOrClauses(
+    outcomes.slice(0, 3).map((outcome) => quotePubMedPhrase(outcome))
+  );
+  const parts = [subjectClause, outcomeClause].filter(Boolean);
 
   if (parts.length === 0) {
     return buildTopicPubMedQuery(originalQuery);
@@ -348,8 +1052,12 @@ export function buildClaimPubMedQuery(claimText: string, originalQuery: string):
  */
 export function buildPlainLiteratureQuery(
   claimText: string,
-  originalQuery: string
+  originalQuery: string,
+  slots?: SearchSlots | null
 ): string {
+  if (slots?.intervention) {
+    return slotsToPlainQuery(slots) || originalQuery.replace(/\?/g, "").trim();
+  }
   const subjectTerms = extractClaimSubjectTerms(claimText, originalQuery);
   const claimOutcomes = extractClaimOutcomeTerms(claimText);
   const queryOutcomes = extractOutcomeTerms(originalQuery);
@@ -362,7 +1070,10 @@ export function buildPlainLiteratureQuery(
   return parts.join(" ").trim() || originalQuery.replace(/\?/g, "").trim();
 }
 
-export function buildPlainTopicQuery(query: string): string {
+export function buildPlainTopicQuery(query: string, slots?: SearchSlots | null): string {
+  if (slots?.intervention) {
+    return slotsToPlainQuery(slots) || query.replace(/\?/g, "").trim();
+  }
   const subject = extractPrimarySubject(query);
   const subjectTerms = getSubjectSearchTerms(subject);
   const outcomes = extractOutcomeTerms(query);
@@ -376,4 +1087,38 @@ export function extractClaimSearchTerms(
   originalQuery: string
 ): string {
   return buildClaimPubMedQuery(claimText, originalQuery);
+}
+
+/**
+ * Enhanced query building with LLM expansion and validation.
+ * Use this for critical queries where accuracy matters most.
+ */
+export async function buildValidatedPubMedQuery(
+  intervention: string,
+  outcomes: string[],
+  router: import("@/engine/llm/model-router").ModelRouter
+): Promise<{ query: string; validation: import("@/lib/query-expansion").QueryValidation }> {
+  const { getAllInterventionTerms, validatePubMedQuery } = await import("@/lib/query-expansion");
+  
+  // Get expanded terms (auto + LLM + cache)
+  const interventionTerms = await getAllInterventionTerms(intervention, router, true);
+  
+  // Build query with expanded terms
+  const subjectClause = interventionTerms.length > 1
+    ? `(${interventionTerms.map((term) => quotePubMedPhrase(term)).join(" OR ")})`
+    : quotePubMedPhrase(interventionTerms[0] || intervention);
+  
+  const outcomeClause = outcomes.length > 0
+    ? outcomes.slice(0, 3).map((o) => quotePubMedPhrase(o)).join(" AND ")
+    : "";
+  
+  const query = [subjectClause, outcomeClause].filter(Boolean).join(" AND ");
+  
+  // Validate the query
+  const validation = await validatePubMedQuery(query, intervention, router);
+  
+  // Use improved query if validation suggests one
+  const finalQuery = validation.improvedQuery || query;
+  
+  return { query: finalQuery, validation };
 }

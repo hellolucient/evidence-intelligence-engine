@@ -1,6 +1,11 @@
 import type { PromptVersion } from "../prompts/registry";
 import type { ModelTier, TaskType } from "./task-types";
-import { DEFAULT_OPENAI_MODEL, DEFAULT_TEMPERATURE, completeOpenAIChat } from "./provider";
+import {
+  DEFAULT_OPENAI_MODEL,
+  DEFAULT_REASONING_MODEL,
+  DEFAULT_TEMPERATURE,
+  completeOpenAIChat,
+} from "./provider";
 import type { LLMProvider } from "./provider";
 import { logModelRunNonFatal } from "@/lib/model-runs/log-model-run";
 
@@ -28,24 +33,47 @@ export type ModelRouter = {
 function defaultTierForTask(taskType: TaskType): ModelTier {
   switch (taskType) {
     case "raw_answer":
+    case "rewrite":
+      return "reasoning";
+    case "query_parse":
+    case "parse_critic":
+    case "prose_repair":
     case "claim_extraction":
+    case "query_expansion":
+    case "query_validation":
     case "downstream_menu_description":
     case "downstream_product_description":
       return "cheap";
-    case "rewrite":
-      return "reasoning";
   }
 }
 
+/**
+ * Read env at runtime. Next.js inlines `process.env.FOO` at build time, so a
+ * preview compiled before EIE_OPENAI_MODEL_* existed would stay on gpt-4o-mini
+ * forever. Dynamic key access keeps Vercel Preview/Production overrides live.
+ */
+function readEnv(name: string): string | undefined {
+  const value = process.env[name];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function resolveOpenAIModelForTier(tier: ModelTier): string | null {
-  // Explicit tier env vars are optional. If they are missing, we downgrade to cheap.
   if (tier === "cheap") {
-    return process.env.EIE_OPENAI_MODEL_CHEAP?.trim() || DEFAULT_OPENAI_MODEL;
+    return readEnv("EIE_OPENAI_MODEL_CHEAP") || DEFAULT_OPENAI_MODEL;
   }
   if (tier === "reasoning") {
-    return process.env.EIE_OPENAI_MODEL_REASONING?.trim() || null;
+    return readEnv("EIE_OPENAI_MODEL_REASONING") || DEFAULT_REASONING_MODEL;
   }
-  return process.env.EIE_OPENAI_MODEL_PREMIUM?.trim() || null;
+  return readEnv("EIE_OPENAI_MODEL_PREMIUM") || null;
+}
+
+/** Models the running server will send to OpenAI. Safe to expose in logs/headers. */
+export function getResolvedOpenAIModels(): { cheap: string; reasoning: string } {
+  const cheap = resolveOpenAIModelForTier("cheap") || DEFAULT_OPENAI_MODEL;
+  const reasoning = resolveOpenAIModelForTier("reasoning") || cheap;
+  return { cheap, reasoning };
 }
 
 function chooseModel(taskType: TaskType): {
@@ -95,6 +123,10 @@ export function createModelRouter(options?: { llm?: LLMProvider }): ModelRouter 
     async complete(input: RoutedCompletionInput): Promise<string> {
       const started = Date.now();
       const routed = chooseModel(input.taskType);
+      console.info(
+        `[EIE] llm task=${input.taskType} model=${routed.model} tier=${routed.tier_resolved}` +
+          (routed.downgraded ? ` downgraded=${routed.downgrade_reason}` : "")
+      );
 
       const runBase = {
         analysis_id: input.analysisId ?? null,

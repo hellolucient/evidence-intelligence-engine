@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { DashboardView } from "@/components/dashboard/DashboardView";
 
 export default function Home() {
@@ -21,31 +20,6 @@ export default function Home() {
         width: "100%",
         boxSizing: "border-box",
       }}>
-        <Link
-          href="/demo"
-          style={{
-            fontSize: "0.9rem",
-            color: "rgba(255,255,255,0.95)",
-            marginBottom: "1rem",
-            display: "inline-block",
-            textDecoration: "none",
-            fontWeight: 600,
-            padding: "0.5rem 1rem",
-            borderRadius: "8px",
-            background: "rgba(255,255,255,0.15)",
-            backdropFilter: "blur(10px)",
-            transition: "all 0.2s",
-            border: "1px solid rgba(255,255,255,0.2)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.25)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.15)";
-          }}
-        >
-          → Demo (guarded only)
-        </Link>
         <DashboardView />
       </div>
     </main>

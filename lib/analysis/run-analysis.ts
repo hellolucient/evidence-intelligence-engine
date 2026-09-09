@@ -4,7 +4,7 @@
  */
 
 import { analyze } from "@/engine";
-import type { AnalyzeInput, AnalyzeResponse, PubMedSummary } from "@/engine/types";
+import type { AnalyzeInput, AnalyzeResponse, PubMedSummary, SearchSlots } from "@/engine/types";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { persistCompletedAnalysis } from "@/lib/persistence/analysis-repository";
 import {
@@ -20,7 +20,7 @@ import { buildAnalystBrief } from "@/lib/animoca/analyst-service";
 
 export type RunAnalysisOptions = {
   llm?: import("@/engine/llm/provider").LLMProvider;
-  fetchPubmed?: (topic: string) => Promise<PubMedSummary | null>;
+  fetchPubmed?: (topic: string, slots?: SearchSlots | null) => Promise<PubMedSummary | null>;
 };
 
 export type RunAnalysisMeta = {

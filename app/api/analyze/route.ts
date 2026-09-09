@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { runAnalysisWithMeta } from "@/lib/analysis/run-analysis";
 import { fetchPubMedSummary } from "@/lib/pubmed";
+import { getResolvedOpenAIModels } from "@/engine/llm/model-router";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
@@ -36,6 +37,9 @@ export async function POST(request: Request) {
       if (meta.persisted_analysis_id) {
         headers.set("x-eie-analysis-id", meta.persisted_analysis_id);
       }
+      const models = getResolvedOpenAIModels();
+      headers.set("x-eie-openai-model-cheap", models.cheap);
+      headers.set("x-eie-openai-model-reasoning", models.reasoning);
       return NextResponse.json(result, { headers });
     } catch (analyzeErr) {
       const errorMessage = analyzeErr instanceof Error ? analyzeErr.message : String(analyzeErr);
