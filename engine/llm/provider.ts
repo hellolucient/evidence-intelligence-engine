@@ -19,6 +19,13 @@ function getOpenAIKey(): string {
   return key;
 }
 
+function supportsCustomTemperature(model: string): boolean {
+  const id = model.toLowerCase();
+  if (id.includes("astra")) return false;
+  if (/^o[1-9]/.test(id)) return false;
+  return true;
+}
+
 export async function completeOpenAIChat(input: {
   model: string;
   systemPrompt: string;
@@ -33,7 +40,9 @@ export async function completeOpenAIChat(input: {
       { role: "system", content: input.systemPrompt },
       { role: "user", content: input.userMessage },
     ],
-    temperature: input.temperature,
+    ...(supportsCustomTemperature(input.model)
+      ? { temperature: input.temperature }
+      : {}),
   });
   const content = completion.choices[0]?.message?.content;
   if (content == null) {
