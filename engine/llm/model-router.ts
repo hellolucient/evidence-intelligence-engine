@@ -42,15 +42,33 @@ function defaultTierForTask(taskType: TaskType): ModelTier {
   }
 }
 
+/**
+ * Read env at runtime. Next.js inlines `process.env.FOO` at build time, so a
+ * preview compiled before EIE_OPENAI_MODEL_* existed would stay on gpt-4o-mini
+ * forever. Dynamic key access keeps Vercel Preview/Production overrides live.
+ */
+function readEnv(name: string): string | undefined {
+  const value = process.env[name];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function resolveOpenAIModelForTier(tier: ModelTier): string | null {
-  // Explicit tier env vars are optional. If they are missing, we downgrade to cheap.
   if (tier === "cheap") {
-    return process.env.EIE_OPENAI_MODEL_CHEAP?.trim() || DEFAULT_OPENAI_MODEL;
+    return readEnv("EIE_OPENAI_MODEL_CHEAP") || DEFAULT_OPENAI_MODEL;
   }
   if (tier === "reasoning") {
-    return process.env.EIE_OPENAI_MODEL_REASONING?.trim() || null;
+    return readEnv("EIE_OPENAI_MODEL_REASONING") || null;
   }
-  return process.env.EIE_OPENAI_MODEL_PREMIUM?.trim() || null;
+  return readEnv("EIE_OPENAI_MODEL_PREMIUM") || null;
+}
+
+/** Models the running server will send to OpenAI. Safe to expose in logs/headers. */
+export function getResolvedOpenAIModels(): { cheap: string; reasoning: string } {
+  const cheap = resolveOpenAIModelForTier("cheap") || DEFAULT_OPENAI_MODEL;
+  const reasoning = resolveOpenAIModelForTier("reasoning") || cheap;
+  return { cheap, reasoning };
 }
 
 function chooseModel(taskType: TaskType): {
@@ -100,6 +118,10 @@ export function createModelRouter(options?: { llm?: LLMProvider }): ModelRouter 
     async complete(input: RoutedCompletionInput): Promise<string> {
       const started = Date.now();
       const routed = chooseModel(input.taskType);
+      console.info(
+        `[EIE] llm task=${input.taskType} model=${routed.model} tier=${routed.tier_resolved}` +
+          (routed.downgraded ? ` downgraded=${routed.downgrade_reason}` : "")
+      );
 
       const runBase = {
         analysis_id: input.analysisId ?? null,
