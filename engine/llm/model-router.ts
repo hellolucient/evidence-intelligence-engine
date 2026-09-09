@@ -1,6 +1,11 @@
 import type { PromptVersion } from "../prompts/registry";
 import type { ModelTier, TaskType } from "./task-types";
-import { DEFAULT_OPENAI_MODEL, DEFAULT_TEMPERATURE, completeOpenAIChat } from "./provider";
+import {
+  DEFAULT_OPENAI_MODEL,
+  DEFAULT_REASONING_MODEL,
+  DEFAULT_TEMPERATURE,
+  completeOpenAIChat,
+} from "./provider";
 import type { LLMProvider } from "./provider";
 import { logModelRunNonFatal } from "@/lib/model-runs/log-model-run";
 
@@ -28,6 +33,8 @@ export type ModelRouter = {
 function defaultTierForTask(taskType: TaskType): ModelTier {
   switch (taskType) {
     case "raw_answer":
+    case "rewrite":
+      return "reasoning";
     case "query_parse":
     case "parse_critic":
     case "prose_repair":
@@ -37,8 +44,6 @@ function defaultTierForTask(taskType: TaskType): ModelTier {
     case "downstream_menu_description":
     case "downstream_product_description":
       return "cheap";
-    case "rewrite":
-      return "reasoning";
   }
 }
 
@@ -59,7 +64,7 @@ function resolveOpenAIModelForTier(tier: ModelTier): string | null {
     return readEnv("EIE_OPENAI_MODEL_CHEAP") || DEFAULT_OPENAI_MODEL;
   }
   if (tier === "reasoning") {
-    return readEnv("EIE_OPENAI_MODEL_REASONING") || null;
+    return readEnv("EIE_OPENAI_MODEL_REASONING") || DEFAULT_REASONING_MODEL;
   }
   return readEnv("EIE_OPENAI_MODEL_PREMIUM") || null;
 }
