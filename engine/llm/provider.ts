@@ -6,7 +6,7 @@ export interface LLMProvider {
   complete(systemPrompt: string, userMessage: string): Promise<string>;
 }
 
-export const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+export const DEFAULT_OPENAI_MODEL = "gpt-6-astra";
 export const DEFAULT_TEMPERATURE = 0.4;
 
 function getOpenAIKey(): string {

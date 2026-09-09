@@ -8,7 +8,7 @@
 import type { AnalyzeInput, AnalyzeResponse, SearchSlots } from "../types";
 import { useEvidenceMap } from "../config";
 import { loadEvidenceMap, isQueryInScope } from "../services/evidence-map";
-import { createModelRouter } from "../llm/model-router";
+import { createModelRouter, getResolvedOpenAIModels } from "../llm/model-router";
 import { PROMPT_VERSION } from "../prompts/registry";
 import { extractClaims } from "../services/claim-parser";
 import { parseSearchSlots } from "../services/query-parser";
@@ -285,6 +285,7 @@ export async function analyze(
     claim_study_data,
     topic_study_data,
     prose_repaired,
+    llm: getResolvedOpenAIModels(),
   };
 }
 

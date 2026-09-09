@@ -1374,6 +1374,14 @@ export function DashboardView() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", width: "100%", minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.2 }}>
                       Literature Evidence
+                      {result.llm?.cheap && (
+                        <span style={{ display: "block", marginTop: "0.35rem", fontSize: "0.7rem", fontWeight: 600, color: "#4338ca", textTransform: "none", letterSpacing: 0 }}>
+                          Model: {result.llm.cheap}
+                          {result.llm.reasoning && result.llm.reasoning !== result.llm.cheap
+                            ? ` · rewrite: ${result.llm.reasoning}`
+                            : ""}
+                        </span>
+                      )}
                     </p>
                     <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, color: "#2563eb", flexShrink: 0 }}>
                       <input

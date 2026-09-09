@@ -216,4 +216,6 @@ export interface AnalyzeResponse {
   topic_study_data?: TopicStudyData;
   /** True when the raw answer omitted the named object and was repaired once. */
   prose_repaired?: boolean;
+  /** Models the server resolved for this request (not a secret). */
+  llm?: { cheap: string; reasoning: string };
 }
